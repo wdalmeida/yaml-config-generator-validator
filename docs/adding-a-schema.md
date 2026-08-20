@@ -109,6 +109,7 @@ button, e.g. `"topic"` → "Add topic").
 
 **Explicitly not supported** - don't reach for these, extend `json-schema.ts` first (and discuss
 the design) if a real requirement needs one:
+
 - `$ref` / definitions / anything requiring schema composition
 - `oneOf` / `anyOf` / `allOf` / `not`
 - conditionals (`if`/`then`/`else`)

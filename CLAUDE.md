@@ -13,17 +13,27 @@ Each config type is one two-column screen (`ConfigWorkspace`), not separate Gene
 ## Commands
 
 ```sh
-npm run dev      # start dev server
-npm run build    # tsc -b && vite build (type errors fail the build)
-npm run lint     # oxlint
-npm test         # vitest run (all tests)
+npm run dev          # start dev server
+npm run build        # tsc -b && vite build (type errors fail the build)
+npm run lint         # oxlint (TS/JS)
+npm run lint:schemas # validates every src/configs/schemas/*.schema.json against the real
+                      # JSON Schema draft 2020-12 meta-schema (scripts/validate-json-schemas.mjs)
+npm run lint:md       # markdownlint-cli2 on every *.md file (.markdownlint-cli2.jsonc)
+npm run lint:links    # checks every relative + external link in every *.md file
+                      # (scripts/check-markdown-links.sh, config in .markdown-link-check.json)
+npm test              # vitest run (all tests)
 npx vitest run src/lib/yaml.test.ts   # single test file
-npx vitest       # watch mode
+npx vitest             # watch mode
+npm audit --audit-level=high   # dependency vulnerability check
 ```
 
 Linting uses **oxlint**, not eslint — config is `.oxlintrc.json`.
 
-`.github/workflows/ci.yml` runs lint, build, and test on every push to `main` and every PR — the exact same three commands above, in that order. `.github/workflows/deploy.yml` is separate: it only builds and publishes `dist/` to GitHub Pages on push to `main` (see `docs/deploying-to-github-pages.md`), it doesn't lint or test.
+Three workflows in `.github/workflows/`:
+
+- `ci.yml` — on every push to `main` and every PR: `test` (lint, build, test - the same three commands above), `schemas` (`lint:schemas`), `markdown` (`lint:md` + `lint:links`), `audit` (`npm audit --audit-level=high`), `actionlint` (lints the workflow YAML files themselves - install via the [official script](https://github.com/rhysd/actionlint), same as `brew install actionlint` locally), `gitleaks` (secret scanning - also runs locally as a pre-commit hook, so this is defense-in-depth for PRs from forks where the hook isn't installed).
+- `codeql.yml` — GitHub's standard CodeQL SAST template for JS/TS, on push/PR to `main` plus a weekly schedule. Needs GitHub code scanning enabled for the repo (automatic for public repos; private repos need GitHub Advanced Security).
+- `deploy.yml` — only builds and publishes `dist/` to GitHub Pages on push to `main` (see `docs/deploying-to-github-pages.md`); doesn't lint or test.
 
 ## Architecture
 

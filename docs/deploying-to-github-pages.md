@@ -6,6 +6,7 @@ already set up for the easiest option below — you only need one manual step in
 ## Recommended: auto-deploy with GitHub Actions
 
 **Already in this repo:**
+
 - `.github/workflows/deploy.yml` — builds the app and publishes `dist/` on every push to `main`
   (and on manual trigger).
 - `vite.config.ts` has `base: './'` — this makes every built asset path relative
@@ -17,10 +18,12 @@ already set up for the easiest option below — you only need one manual step in
 **What you need to do, once:**
 
 1. Push this repo to GitHub (if you haven't already):
+
    ```sh
    git remote add origin https://github.com/<you>/<repo>.git
    git push -u origin main
    ```
+
 2. On GitHub: **Settings → Pages → Build and deployment → Source → GitHub Actions.**
    (Not "Deploy from a branch" - that's the other, manual option below.)
 3. Push to `main` (or re-run the workflow from the **Actions** tab). The workflow builds and
@@ -39,11 +42,13 @@ npm install -D gh-pages
 ```
 
 Add to `package.json` scripts:
+
 ```json
 "deploy": "npm run build && npx gh-pages -d dist"
 ```
 
 Then whenever you want to publish the current code:
+
 ```sh
 npm run deploy
 ```

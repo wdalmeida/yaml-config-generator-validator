@@ -1,0 +1,12 @@
+{
+  "config": {
+    "default": true,
+    // Long descriptive lines are the deliberate style in these docs (see CLAUDE.md,
+    // docs/adding-a-schema.md) - not a formatting mistake to flag.
+    "MD013": false,
+    // Pedantic pipe-spacing in tables; doesn't affect rendering, not worth enforcing.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["**/node_modules/**"]
+}
