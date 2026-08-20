@@ -23,6 +23,8 @@ npx vitest       # watch mode
 
 Linting uses **oxlint**, not eslint — config is `.oxlintrc.json`.
 
+`.github/workflows/ci.yml` runs lint, build, and test on every push to `main` and every PR — the exact same three commands above, in that order. `.github/workflows/deploy.yml` is separate: it only builds and publishes `dist/` to GitHub Pages on push to `main` (see `docs/deploying-to-github-pages.md`), it doesn't lint or test.
+
 ## Architecture
 
 **Every config type is authored as a standard JSON Schema file, not TypeScript.** `src/configs/schemas/*.schema.json` are real JSON Schema documents (`https://json-schema.org/draft/2020-12/schema`) — the `title`/`type`/`properties`/`required`/`minLength`/`maxLength`/`pattern`/`enum`/`minimum`/`maximum`/`items`/`minItems` keywords mean exactly what the spec says. A tiny converter (`src/configs/json-schema.ts`) derives *both* the Zod validator and the form's field list from the same JSON Schema document at build time, so there is no separate hand-written schema to keep in sync — see `docs/adding-a-schema.md` for the authoring guide (keyword reference, worked examples, what's deliberately not supported).
