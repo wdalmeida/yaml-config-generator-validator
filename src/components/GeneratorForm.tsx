@@ -1,8 +1,14 @@
 import { useMemo, useState } from 'react'
 import { EXISTING_TENANTS } from '../data/tenants'
-import { TOPIC_METHODS, configSchema, type TopicMethod } from '../schema/config'
-import { buildCreateFileUrl, buildEditFileUrl, checkFileExists, type FileExistsResult } from '../lib/github'
-import { configToYaml } from '../lib/yaml'
+import { TOPIC_METHODS, configSchema, type Config, type TopicMethod } from '../schema/config'
+import {
+  buildCreateFileUrl,
+  buildEditFileUrl,
+  checkFileExists,
+  fetchFileContent,
+  type FileExistsResult,
+} from '../lib/github'
+import { configToYaml, parseYamlConfig } from '../lib/yaml'
 
 interface TopicDraft {
   method: TopicMethod
@@ -11,6 +17,8 @@ interface TopicDraft {
 }
 
 const emptyTopic: TopicDraft = { method: TOPIC_METHODS[0], name: '', description: '' }
+
+type LoadState = { kind: 'idle' } | { kind: 'loading' } | { kind: 'error'; message: string }
 
 export function GeneratorForm() {
   const [tenantMode, setTenantMode] = useState<'existing' | 'new'>(
@@ -30,6 +38,9 @@ export function GeneratorForm() {
   // The location a check was last run for. Once the target fields change, the check is stale
   // and we fall back to 'idle' during render rather than syncing state via an effect.
   const [checkedKey, setCheckedKey] = useState<string | null>(null)
+
+  const [pastedYaml, setPastedYaml] = useState('')
+  const [loadState, setLoadState] = useState<LoadState>({ kind: 'idle' })
 
   const tenant = tenantMode === 'existing' ? tenantExisting : tenantNew
 
@@ -52,6 +63,56 @@ export function GeneratorForm() {
   const locationKey = `${location.owner}|${location.repo}|${location.branch}|${location.path}`
   const effectiveCheckState = checkedKey === locationKey ? checkState : 'idle'
 
+  // Populates every field from a parsed config, e.g. after loading an existing file.
+  function applyConfig(config: Config) {
+    if ((EXISTING_TENANTS as readonly string[]).includes(config.tenant)) {
+      setTenantMode('existing')
+      setTenantExisting(config.tenant)
+    } else {
+      setTenantMode('new')
+      setTenantNew(config.tenant)
+    }
+    setProduct(config.product)
+    setProxyEntries(config.proxyEntries.length > 0 ? config.proxyEntries : [''])
+    setTopics(config.githubTopics.length > 0 ? config.githubTopics.map((t) => ({ ...t })) : [{ ...emptyTopic }])
+    setLoadState({ kind: 'idle' })
+  }
+
+  async function handleLoadFromGithub() {
+    if (!owner.trim() || !repo.trim() || !path.trim()) return
+    setLoadState({ kind: 'loading' })
+    const fileResult = await fetchFileContent(location)
+    if (!fileResult.success) {
+      setLoadState({
+        kind: 'error',
+        message: "Couldn't fetch that file (private repo, wrong path, or not found). Try pasting its contents instead.",
+      })
+      return
+    }
+    const parsed = parseYamlConfig(fileResult.content)
+    if (!parsed.success) {
+      setLoadState({
+        kind: 'error',
+        message: 'yamlError' in parsed ? `Fetched file has invalid YAML: ${parsed.yamlError}` : "Fetched file doesn't match the config schema.",
+      })
+      return
+    }
+    applyConfig(parsed.data)
+  }
+
+  function handleLoadFromPaste() {
+    const parsed = parseYamlConfig(pastedYaml)
+    if (!parsed.success) {
+      setLoadState({
+        kind: 'error',
+        message: 'yamlError' in parsed ? `Invalid YAML: ${parsed.yamlError}` : "That YAML doesn't match the config schema.",
+      })
+      return
+    }
+    applyConfig(parsed.data)
+    setPastedYaml('')
+  }
+
   async function handleCheck() {
     if (!canCheck) return
     setCheckState('checking')
@@ -68,6 +129,46 @@ export function GeneratorForm() {
 
   return (
     <div className="panel">
+      <section>
+        <h2>Target file on GitHub</h2>
+        <div className="github-row">
+          <input value={owner} placeholder="owner" onChange={(e) => setOwner(e.target.value)} />
+          <input value={repo} placeholder="repo" onChange={(e) => setRepo(e.target.value)} />
+          <input value={branch} placeholder="branch" onChange={(e) => setBranch(e.target.value)} />
+          <input value={path} placeholder="path/to/config.yaml" onChange={(e) => setPath(e.target.value)} />
+        </div>
+      </section>
+
+      <section>
+        <h2>Load existing config (optional)</h2>
+        <p className="github-hint">
+          Editing a config that's already committed? Load it here first, either straight from
+          GitHub or by pasting its contents, and the fields below will be filled in for you.
+        </p>
+        <button
+          type="button"
+          disabled={!owner.trim() || !repo.trim() || !path.trim() || loadState.kind === 'loading'}
+          onClick={handleLoadFromGithub}
+        >
+          {loadState.kind === 'loading' ? 'Loading...' : 'Load from GitHub'}
+        </button>
+
+        <div className="paste-row">
+          <textarea
+            className="yaml-input"
+            rows={4}
+            value={pastedYaml}
+            placeholder="...or paste the existing YAML content here"
+            onChange={(e) => setPastedYaml(e.target.value)}
+          />
+        </div>
+        <button type="button" disabled={!pastedYaml.trim()} onClick={handleLoadFromPaste}>
+          Load pasted YAML
+        </button>
+
+        {loadState.kind === 'error' && <p className="error">{loadState.message}</p>}
+      </section>
+
       <section>
         <h2>Tenant</h2>
         <div className="radio-row">
@@ -200,12 +301,6 @@ export function GeneratorForm() {
 
       <section>
         <h2>Push to GitHub</h2>
-        <div className="github-row">
-          <input value={owner} placeholder="owner" onChange={(e) => setOwner(e.target.value)} />
-          <input value={repo} placeholder="repo" onChange={(e) => setRepo(e.target.value)} />
-          <input value={branch} placeholder="branch" onChange={(e) => setBranch(e.target.value)} />
-          <input value={path} placeholder="path/to/config.yaml" onChange={(e) => setPath(e.target.value)} />
-        </div>
         <button type="button" disabled={!canCheck || effectiveCheckState === 'checking'} onClick={handleCheck}>
           {effectiveCheckState === 'checking' ? 'Checking...' : 'Get GitHub link'}
         </button>

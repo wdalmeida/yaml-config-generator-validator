@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildCreateFileUrl, buildEditFileUrl, checkFileExists } from './github'
+import { buildCreateFileUrl, buildEditFileUrl, checkFileExists, fetchFileContent } from './github'
 
 const location = { owner: 'acme-co', repo: 'infra', branch: 'main', path: 'configs/tenant.yaml' }
 
@@ -58,5 +58,39 @@ describe('checkFileExists', () => {
       vi.fn(() => Promise.reject(new Error('network down'))),
     )
     await expect(checkFileExists(location)).resolves.toBe('unknown')
+  })
+})
+
+describe('fetchFileContent', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('decodes the base64 content GitHub returns, including non-ASCII text', async () => {
+    const original = 'tenant: acme\nproduct: café\n'
+    const base64 = btoa(String.fromCharCode(...new TextEncoder().encode(original)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ content: base64, encoding: 'base64' }),
+        } as Response),
+      ),
+    )
+    await expect(fetchFileContent(location)).resolves.toEqual({ success: true, content: original })
+  })
+
+  it('reports "not-found" when the request does not resolve to 200', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ status: 404 } as Response)))
+    await expect(fetchFileContent(location)).resolves.toEqual({ success: false, reason: 'not-found' })
+  })
+
+  it('reports "network" on a network failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('network down'))),
+    )
+    await expect(fetchFileContent(location)).resolves.toEqual({ success: false, reason: 'network' })
   })
 })

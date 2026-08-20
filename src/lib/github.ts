@@ -61,3 +61,33 @@ export async function checkFileExists({ owner, repo, branch, path }: RepoFileLoc
     return 'unknown'
   }
 }
+
+export type FetchFileContentResult =
+  | { success: true; content: string }
+  | { success: false; reason: 'not-found' | 'network' }
+
+// Fetches a file's current content via GitHub's public contents API (unauthenticated, so this
+// only works for public repos - same limitation as checkFileExists). Used to preload the
+// generator form from what's already committed, as an alternative to pasting the YAML in by hand.
+export async function fetchFileContent({ owner, repo, branch, path }: RepoFileLocation): Promise<FetchFileContentResult> {
+  const encodedPath = path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`
+
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+    if (res.status !== 200) return { success: false, reason: 'not-found' }
+
+    const data = (await res.json()) as { content?: string; encoding?: string }
+    if (data.encoding !== 'base64' || typeof data.content !== 'string') {
+      return { success: false, reason: 'network' }
+    }
+    const binary = atob(data.content.replace(/\n/g, ''))
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+    return { success: true, content: new TextDecoder('utf-8').decode(bytes) }
+  } catch {
+    return { success: false, reason: 'network' }
+  }
+}
