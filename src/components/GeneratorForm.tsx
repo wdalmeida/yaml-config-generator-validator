@@ -60,6 +60,12 @@ export function GeneratorForm() {
     setCheckState(status)
   }
 
+  // Copies the YAML before GitHub's editor opens in the new tab, so the user only has to
+  // select-all and paste there instead of also going back to hit "Copy YAML" first.
+  function handleOpenToUpdate() {
+    void navigator.clipboard.writeText(yaml)
+  }
+
   return (
     <div className="panel">
       <section>
@@ -219,11 +225,17 @@ export function GeneratorForm() {
 
         {effectiveCheckState === 'exists' && (
           <p className="github-hint">
-            This file already exists on that branch. GitHub can't prefill an update, so copy the
-            YAML above, then paste it into the editor that opens, replacing the current contents,
-            and commit.
+            This file already exists on that branch. GitHub can't prefill an update, so the YAML
+            has been copied to your clipboard — in the editor that opens, select all (Cmd/Ctrl+A),
+            paste (Cmd/Ctrl+V) to replace the contents, then commit.
             <br />
-            <a className="github-link" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer">
+            <a
+              className="github-link"
+              href={buildEditFileUrl(location)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={handleOpenToUpdate}
+            >
               Open file on GitHub to update
             </a>
           </p>
@@ -232,7 +244,8 @@ export function GeneratorForm() {
         {effectiveCheckState === 'unknown' && (
           <p className="github-hint">
             Couldn't confirm whether this file exists (private repo, or GitHub's API is
-            rate-limited). Use Create if it's new, or Update if it already exists.
+            rate-limited). Use Create if it's new, or Update if it already exists — Update copies
+            the YAML to your clipboard first, since GitHub can't prefill an edit.
             <br />
             <a
               className="github-link"
@@ -242,7 +255,13 @@ export function GeneratorForm() {
             >
               Create file on GitHub
             </a>{' '}
-            <a className="github-link" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer">
+            <a
+              className="github-link"
+              href={buildEditFileUrl(location)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={handleOpenToUpdate}
+            >
               Open file on GitHub to update
             </a>
           </p>
