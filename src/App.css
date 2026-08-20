@@ -1,0 +1,87 @@
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family: system-ui, sans-serif;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.tabs button {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  font-weight: 600;
+  border-bottom: 2px solid currentColor;
+}
+
+.panel section {
+  margin-bottom: 1.5rem;
+}
+
+.radio-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.list-row,
+.github-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.topic-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.topic-row input {
+  flex: 1;
+}
+
+.yaml-output,
+.yaml-input {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  box-sizing: border-box;
+}
+
+.errors {
+  color: #b91c1c;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.success {
+  color: #15803d;
+}
+
+.github-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+.github-link.disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.github-hint {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
