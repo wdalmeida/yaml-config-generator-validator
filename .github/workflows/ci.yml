@@ -213,7 +213,7 @@ jobs:
 
       - name: zizmor (SARIF, for code scanning)
         id: zizmor
-        run: zizmor . --format=sarif --output=zizmor-results.sarif
+        run: zizmor . --format=sarif > zizmor-results.sarif
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
