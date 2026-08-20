@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CD",
+  "x-config-id": "cd",
+  "x-default-filename": "cd.yml",
+  "type": "object",
+  "properties": {
+    "environment": {
+      "type": "string",
+      "title": "Environment",
+      "enum": ["staging", "production"]
+    },
+    "deployCommand": {
+      "type": "string",
+      "title": "Deploy command",
+      "minLength": 1,
+      "x-placeholder": "npm run deploy"
+    },
+    "requiresApproval": {
+      "type": "boolean",
+      "title": "Requires approval"
+    },
+    "notifyChannel": {
+      "type": "string",
+      "title": "Notify channel",
+      "minLength": 1,
+      "x-placeholder": "#deploys"
+    }
+  },
+  "required": ["environment", "deployCommand", "requiresApproval", "notifyChannel"]
+}

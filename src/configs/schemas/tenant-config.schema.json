@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tenant Config",
+  "x-config-id": "tenant-config",
+  "x-default-filename": "config.yaml",
+  "type": "object",
+  "properties": {
+    "tenant": {
+      "type": "string",
+      "title": "Tenant",
+      "minLength": 1,
+      "maxLength": 12,
+      "enum": ["acme", "globex", "initech"],
+      "x-widget": "select-or-text"
+    },
+    "product": {
+      "type": "string",
+      "title": "Product",
+      "minLength": 1,
+      "x-placeholder": "product name"
+    },
+    "proxyEntries": {
+      "type": "array",
+      "title": "Proxy entries",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(\\*\\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)+$",
+        "x-placeholder": "*.github.com"
+      }
+    },
+    "githubTopics": {
+      "type": "array",
+      "title": "GitHub topics",
+      "minItems": 1,
+      "x-item-label": "topic",
+      "items": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "enum": ["artefact", "environment", "script"]
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "minLength": 1,
+            "x-placeholder": "name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "minLength": 1,
+            "x-placeholder": "description"
+          }
+        },
+        "required": ["method", "name", "description"]
+      }
+    }
+  },
+  "required": ["tenant", "product", "proxyEntries", "githubTopics"]
+}

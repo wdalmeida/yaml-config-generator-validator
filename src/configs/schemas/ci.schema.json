@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CI",
+  "x-config-id": "ci",
+  "x-default-filename": "ci.yml",
+  "type": "object",
+  "properties": {
+    "runtime": {
+      "type": "string",
+      "title": "Runtime",
+      "enum": ["node", "python", "go", "java"]
+    },
+    "runtimeVersion": {
+      "type": "string",
+      "title": "Runtime version",
+      "minLength": 1,
+      "x-placeholder": "20"
+    },
+    "buildCommand": {
+      "type": "string",
+      "title": "Build command",
+      "minLength": 1,
+      "x-placeholder": "npm run build"
+    },
+    "testCommand": {
+      "type": "string",
+      "title": "Test command",
+      "minLength": 1,
+      "x-placeholder": "npm test"
+    },
+    "triggerBranches": {
+      "type": "array",
+      "title": "Trigger branches",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "x-placeholder": "main"
+      }
+    },
+    "registryDocker": {
+      "type": "string",
+      "title": "Docker registry",
+      "minLength": 1
+    },
+    "registryMaven": {
+      "type": "string",
+      "title": "Maven registry",
+      "minLength": 1
+    }
+  },
+  "required": ["runtime", "runtimeVersion", "buildCommand", "testCommand", "triggerBranches"],
+  "x-computed-groups": [
+    {
+      "label": "Registry name",
+      "placeholder": "myregistry",
+      "targets": [
+        { "key": "registryDocker", "label": "Docker", "suffix": "docker" },
+        { "key": "registryMaven", "label": "Maven", "suffix": "maven" }
+      ]
+    }
+  ]
+}

@@ -1,17 +1,16 @@
 import YAML from 'yaml'
-import type { ZodIssue } from 'zod'
-import { configSchema, type Config } from '../schema/config'
+import type { ZodIssue, ZodType } from 'zod'
 
-export function configToYaml(config: Config): string {
-  return YAML.stringify(config)
+export function dataToYaml(data: unknown): string {
+  return YAML.stringify(data)
 }
 
-export type ParseYamlConfigResult =
-  | { success: true; data: Config }
+export type ParseYamlResult<T> =
+  | { success: true; data: T }
   | { success: false; yamlError: string }
   | { success: false; issues: ZodIssue[] }
 
-export function parseYamlConfig(source: string): ParseYamlConfigResult {
+export function parseYaml<T>(schema: ZodType<T>, source: string): ParseYamlResult<T> {
   let parsed: unknown
   try {
     parsed = YAML.parse(source)
@@ -19,7 +18,7 @@ export function parseYamlConfig(source: string): ParseYamlConfigResult {
     return { success: false, yamlError: err instanceof Error ? err.message : 'Invalid YAML' }
   }
 
-  const result = configSchema.safeParse(parsed)
+  const result = schema.safeParse(parsed)
   if (!result.success) {
     return { success: false, issues: result.error.issues }
   }

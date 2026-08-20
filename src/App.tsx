@@ -1,33 +1,31 @@
-import { useState } from 'react'
-import { GeneratorForm } from './components/GeneratorForm'
-import { ValidatorPanel } from './components/ValidatorPanel'
+import { CONFIG_DEFINITIONS, getConfigDefinition, getDraftStatus } from './configs'
+import { ConfigWorkspace } from './components/ConfigWorkspace'
+import { usePersistedState } from './lib/persisted-state'
 import './App.css'
 
-type Tab = 'generate' | 'validate'
-
 function App() {
-  const [tab, setTab] = useState<Tab>('generate')
+  const [selectedId, setSelectedId] = usePersistedState('selected-config-id', CONFIG_DEFINITIONS[0].id)
+  const definition = getConfigDefinition(selectedId)
 
   return (
     <main className="app">
       <h1>YAML Config Generator &amp; Validator</h1>
-      <nav className="tabs">
-        <button
-          type="button"
-          className={tab === 'generate' ? 'active' : ''}
-          onClick={() => setTab('generate')}
-        >
-          Generate
-        </button>
-        <button
-          type="button"
-          className={tab === 'validate' ? 'active' : ''}
-          onClick={() => setTab('validate')}
-        >
-          Validate
-        </button>
+
+      <nav className="config-tabs">
+        {CONFIG_DEFINITIONS.map((def) => (
+          <button
+            key={def.id}
+            type="button"
+            className={`config-tab${def.id === selectedId ? ' active' : ''}`}
+            onClick={() => setSelectedId(def.id)}
+          >
+            <span className={`status-dot status-${getDraftStatus(def)}`} aria-hidden="true" />
+            {def.label}
+          </button>
+        ))}
       </nav>
-      {tab === 'generate' ? <GeneratorForm /> : <ValidatorPanel />}
+
+      <ConfigWorkspace key={definition.id} definition={definition} />
     </main>
   )
 }
