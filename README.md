@@ -17,7 +17,12 @@ See `CLAUDE.md` for architecture details.
 ```sh
 npm install
 npm run dev
+npm test              # or: npm run test:coverage
 ```
+
+## License
+
+[MIT](LICENSE)
 
 ## Docs
 

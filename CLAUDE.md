@@ -22,6 +22,7 @@ npm run lint:md       # markdownlint-cli2 on every *.md file (.markdownlint-cli2
 npm run lint:links    # checks every relative + external link in every *.md file
                       # (scripts/check-markdown-links.sh, config in .markdown-link-check.json)
 npm test              # vitest run (all tests)
+npm run test:coverage  # vitest run --coverage (text + html + lcov, see coverage/index.html)
 npx vitest run src/lib/yaml.test.ts   # single test file
 npx vitest             # watch mode
 npm audit --audit-level=high   # dependency vulnerability check
@@ -58,6 +59,8 @@ Four workflows in `.github/workflows/`, every `uses:` pinned to a full commit SH
 
 One recursive component renders every field type for every config, driven purely by its `FieldDescriptor`. `list-object` fields (e.g. `githubTopics`, env `variables`) recurse into `FieldRow` for each item field with `compact` set, so item rows render as one inline strip (select/inputs/checkbox side by side) rather than stacked labeled blocks. `select-or-text` (currently only tenant) renders an Existing/New radio pair; the "New" input's `maxLength` comes from the field descriptor. `toggle-text` renders a checkbox that reveals a text input only when checked; unchecking clears the value back to `null` rather than just hiding a stale string. `computed-toggle-group` renders one shared base input plus a checkbox per target - there is no text input for a target's own value, since the user never sets it directly.
 
+`FieldRow.test.tsx` covers every one of these variants via `@testing-library/react` (render + `fireEvent`, asserting on the `onChange` calls) — when adding a new `FieldDescriptor` type, add its case there too. One gotcha hit while writing these: `getByDisplayValue`/`findByDisplayValue` unreliably match multiline `<textarea>` content in this jsdom setup - use `expect(el).toHaveValue(...)` instead (see `ConfigWorkspace.test.tsx`).
+
 ### `ConfigWorkspace` (`src/components/ConfigWorkspace.tsx`)
 
 Takes a `definition: ConfigDefinition` prop and contains zero schema-specific logic — `App.tsx` remounts it with `key={definition.id}` when the user switches pills, which is also what gives each config type its own isolated `usePersistedState` drafts (see below) without any shared-state plumbing.
@@ -65,6 +68,8 @@ Takes a `definition: ConfigDefinition` prop and contains zero schema-specific lo
 - Draft state (`Record<string, unknown>`, one field per key) → `parseDraft` → `dataToYaml` for the right column's Output panel; `FieldRow` renders the right column's fields from `definition.fields`.
 - The left column's paste box drives three actions, all funneling through `parseYaml(definition.schema, ...)` into one shared `PasteBoxResult` (so there's a single feedback area, not three): **Fetch from GitHub** fills the textarea via `fetchFileContent` (doesn't touch the draft); **Validate** parses the textarea and reports valid/invalid without touching the draft; **Load into form** parses the textarea and, only if valid, replaces the whole draft (`{ ...emptyDraftFor(definition), ...parsed.data }`) and clears the textarea.
 - Push to GitHub (bottom of the right column) is unchanged from before: `checkFileExists` → create/edit link, same as documented below.
+
+`ConfigWorkspace.test.tsx` and `App.test.tsx` cover the interactive flows above end-to-end (filling fields → Output YAML, paste → Validate/Load into form, mocked-`fetch` Fetch-from-GitHub and Get-GitHub-link, pill switching + persisted selection) — this is the only place that actually renders the component tree and simulates user interaction; everything else under `src/configs`/`src/lib` tests pure functions directly. `src/test-setup.ts` wires up `@testing-library/jest-dom`'s matchers and stubs `navigator.clipboard.writeText` (jsdom doesn't implement the Clipboard API, and both Copy YAML and the update-link click call it).
 
 ### Persistence (`src/lib/persisted-state.ts`)
 
