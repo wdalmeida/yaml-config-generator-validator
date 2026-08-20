@@ -22,6 +22,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -64,6 +66,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -80,6 +84,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -113,6 +119,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -125,6 +133,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12 # script pinned to tag v1.7.12
           ./actionlint -color
@@ -142,6 +152,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # The gitleaks CLI itself is MIT-licensed (FOSS); gitleaks/gitleaks-action is a separate,
       # proprietary product under gitleaks-action's own EULA. Running the CLI directly keeps
@@ -176,4 +187,51 @@ jobs:
 
       - name: Fail if gitleaks found secrets
         if: steps.gitleaks.outcome == 'failure'
+        run: exit 1
+
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      # zizmor is a GitHub Actions-specific security linter (Apache-2.0/MIT) - it catches
+      # things neither actionlint (syntax/shellcheck) nor Semgrep's generic rulesets do:
+      # template injection via untrusted context values, overly broad workflow permissions,
+      # impostor commits, credential persistence through checkout. Installed from PyPI
+      # (registry-integrity-checked, exact version pinned) rather than a raw binary download.
+      - run: pip install zizmor==1.29.0
+
+      - name: zizmor (SARIF, for code scanning)
+        id: zizmor
+        run: zizmor . --format=sarif > zizmor-results.sarif
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: zizmor-results
+          path: zizmor-results.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
+        with:
+          sarif_file: zizmor-results.sarif
+          category: zizmor
+
+      - name: Fail if zizmor found issues
+        if: steps.zizmor.outcome == 'failure'
         run: exit 1

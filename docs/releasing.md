@@ -70,6 +70,36 @@ JSON
 this exact ruleset and checking `current_user_can_bypass` came back `"always"`, not looked up
 from a public reference table.)
 
+## `main` requires a PR with passing checks
+
+A second ruleset ("Require PR and passing checks on main") targets `refs/heads/main` with the
+`pull_request` rule (a PR is required to merge; `required_approving_review_count: 0` since this
+is a solo-maintained repo - approvals can be added later if collaborators join),
+`required_status_checks` (every job in `ci.yml`, including `zizmor` below), `deletion`, and
+`non_fast_forward` (blocks force-push) rules active. Same admin bypass as the tag ruleset -
+the repo owner can still push directly or merge without a green check if genuinely needed, but
+nobody/nothing else can.
+
+## Why `can_approve_pull_request_reviews` stays on repo-wide
+
+release-please needs the repo's **Settings → Actions → General → "Allow GitHub Actions to
+create and approve pull requests"** toggle on - without it, the workflow fails with "GitHub
+Actions is not permitted to create or approve pull requests" (hit this for real the first time
+`release.yml` ran; fixed via `gh api -X PUT .../actions/permissions/workflow -F
+can_approve_pull_request_reviews=true`).
+
+This toggle is **repository-wide** - GitHub's API has no way to scope it to one workflow. The
+mitigation is that only `release.yml`'s `release` job actually declares
+`permissions: pull-requests: write` in its YAML (every other job across every workflow in this
+repo explicitly scopes its own `permissions:` block, and none of them include it) - so even
+though the repo-wide toggle is open, no other job today can actually exercise it. **This is a
+tradeoff, not a closed gap**: any future job that adds `pull-requests: write` would also gain
+this capability. The fully-closed alternative is a dedicated GitHub App (fine-grained,
+repo-scoped, only `contents: write` + `pull-requests: write`) used via
+`actions/create-github-app-token` instead of the default `GITHUB_TOKEN`, which would let this
+toggle go back to `false` - deliberately not done here (adds a private key to manage as a
+secret) but worth reconsidering if this repo gains other contributors/workflows.
+
 ## The first release
 
 `.release-please-manifest.json` starts at `"." : "0.0.0"`, matching `package.json`'s current
