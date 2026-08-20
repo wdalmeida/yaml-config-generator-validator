@@ -71,17 +71,6 @@ artifact that got attested (above) was the one scanned; the repository pass is w
 scan doesn't depend on Syft. Both use the same OSV-Scanner action and OSV.dev database, so
 running both isn't duplicating a check, it's removing a single point of failure.
 
-One byproduct worth knowing: the SBOM includes non-package entries (this repo's own
-`.github/workflows/*.yml` files, and `package-lock.json` itself, both added by Syft's
-respective catalogers as generic "file" components) that have no [Package URL][purl] for
-OSV-Scanner to match against - these log as `Neither CPE nor PURL found for package: ...`
-in the `sca` job's "Scan SBOM..." step. That's expected noise from files Syft catalogs for
-other reasons (the GitHub Actions cataloger, a generic file cataloger), not a sign that real
-npm dependencies are being skipped - the scan still reports the actual package count found
-(currently ~420) and exits successfully once every real dependency is checked.
-
-[purl]: https://github.com/package-url/purl-spec
-
 ## Why the SBOM excludes some things
 
 - **Go stdlib inside TypeScript 7's native `tsc` binary**: TypeScript 7 ships a
@@ -89,10 +78,23 @@ npm dependencies are being skipped - the scan still reports the actual package c
   cataloger detects the embedded Go stdlib version and reports its CVEs - which aren't
   something this repo can patch (only the TypeScript team can, by rebuilding against a newer
   Go toolchain), and drowned out every real finding in early testing (150 Go stdlib CVEs, 0
-  real ones). Excluded via `SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger"`.
+  real ones). Excluded via `-go-module-binary-cataloger`.
 - **`.github/workflows/*.yml` files shipped inside `node_modules`**: some npm packages include
   their own CI configs in their published source. Syft's GitHub Actions cataloger otherwise
   reports *their* action pins as if this repo used them. Excluded via `SYFT_EXCLUDE`.
+- **Raw file entries for this repo's own `.github/workflows/*.yml` files and
+  `package-lock.json`**: separately from the *package* catalogers (which correctly emit a
+  proper `pkg:github/...`-purled component per `uses:` line, and a `pkg:npm/...`-purled
+  component per dependency), Syft's `file-metadata-cataloger` and `file-digest-cataloger` also
+  emit each of those source files themselves as bare `type: file` components with no purl -
+  essentially duplicate, hash-only records of files whose real package data is already
+  captured elsewhere. OSV-Scanner can't match a purl-less file against anything, so it logs
+  `Neither CPE nor PURL found for package: ...` once per file - confirmed by generating the
+  SBOM locally and inspecting it (`syft . -o syft-json=...`): the real `actions/checkout`
+  entry has its own `pkg:github/actions/checkout@v7.0.1` purl regardless, and removing these
+  two catalogers dropped exactly those file-only entries (427 → 421 components) with zero
+  npm/GitHub-Actions package data lost. Excluded via
+  `-file-metadata-cataloger,-file-digest-cataloger`.
 
 If you regenerate the SBOM locally, use the same flags (see below) or you'll see this noise
 return.
@@ -149,7 +151,7 @@ repos. Nothing runs until that's done.
 # SBOM (matches the CI job's flags exactly)
 SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES=true \
 SYFT_EXCLUDE='./node_modules/**/.github/**,./dist/**' \
-SYFT_SELECT_CATALOGERS='-go-module-binary-cataloger' \
+SYFT_SELECT_CATALOGERS='-go-module-binary-cataloger,-file-metadata-cataloger,-file-digest-cataloger' \
 syft . -o cyclonedx-json=sbom.cdx.json
 
 # SCA: scan that SBOM, and separately scan the repository/lockfile directly
