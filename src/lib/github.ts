@@ -34,19 +34,28 @@ export function buildEditFileUrl({ owner, repo, branch, path }: RepoFileLocation
 export type FileExistsResult = 'exists' | 'missing' | 'unknown'
 
 // Uses GitHub's public contents API (unauthenticated, works for public repos) to tell
-// whether `path` already exists on `branch`. Private repos and rate-limited requests both
-// come back as "unknown" since we can't distinguish "private" from "missing" without a token.
+// whether `path` already exists on `branch`.
+//
+// GitHub returns a plain 404 both for "path doesn't exist in this repo" and for "this repo
+// is private/doesn't exist" (it never reveals a private repo's existence to an unauthenticated
+// caller) - the two are indistinguishable from the contents endpoint alone. So we first check
+// whether the repo itself is visible; only if it is do we trust a 404 on the path as "missing".
+// Otherwise (private repo, or rate-limited) we report "unknown".
 export async function checkFileExists({ owner, repo, branch, path }: RepoFileLocation): Promise<FileExistsResult> {
+  const repoUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
   const encodedPath = path
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/')
-  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`
+  const contentsUrl = `${repoUrl}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`
 
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
-    if (res.status === 200) return 'exists'
-    if (res.status === 404) return 'missing'
+    const repoRes = await fetch(repoUrl, { headers: { Accept: 'application/vnd.github+json' } })
+    if (repoRes.status !== 200) return 'unknown'
+
+    const fileRes = await fetch(contentsUrl, { headers: { Accept: 'application/vnd.github+json' } })
+    if (fileRes.status === 200) return 'exists'
+    if (fileRes.status === 404) return 'missing'
     return 'unknown'
   } catch {
     return 'unknown'
