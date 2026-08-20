@@ -51,6 +51,34 @@ mutable action tags as a blocking finding - that's how this was caught during se
 `@<sha> # vX.Y.Z` convention and opens a PR updating both the SHA and the comment together
 when a new version ships, for both `npm` and `github-actions` ecosystems.
 
+## Dependabot doesn't cover everything - hence `renovate.json`
+
+`supply-chain.yml`'s `sast` job runs Semgrep inside a container pinned by **Docker digest**
+(`semgrep/semgrep@sha256:... # 1.173.0`), not a `uses:` step. Confirmed by reading
+[dependabot-core's `github_actions/file_parser.rb`](https://github.com/dependabot/dependabot-core/blob/main/github_actions/lib/dependabot/github_actions/file_parser.rb)
+directly: it only walks `uses:`/`steps:` keys, and even there it explicitly skips `docker://`
+references (`# TODO: Support Docker references` - never implemented). A job's `container:`
+field is never inspected at all. So this digest has **no update path via Dependabot**,
+regardless of how it's referenced.
+
+[Renovate](https://github.com/renovatebot/renovate) (AGPL-3.0) does support this - confirmed
+the same way, by reading its
+[`github-actions` manager source](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/github-actions/extract.ts):
+it explicitly extracts `job.container` (and `job.services`) as their own dependency types
+(`depType: 'container'` / `'service'`), separate from regular `uses:` action refs
+(`depType: 'action'`).
+
+`renovate.json` is scoped narrowly so the two bots don't overlap: `enabledManagers` restricts
+Renovate to the `github-actions` manager only (it never touches npm - Dependabot already does),
+and a `packageRules` entry disables the `action`/`github-runner`/`uses-with` dep types Dependabot
+already covers, leaving only `container`/`docker`/`service` (the Semgrep image digest today,
+and anything similar added later) active. Same 7-day `minimumReleaseAge` cooldown as
+Dependabot's, for the same reason.
+
+**Requires one manual step**: unlike Dependabot (built into GitHub, no setup), Renovate needs
+its [GitHub App](https://github.com/apps/renovate) installed on this repo/org - free for public
+repos. Nothing runs until that's done.
+
 ## Running these locally before pushing
 
 ```sh

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["github-actions"],
+  "minimumReleaseAge": "7 days",
+  "schedule": ["before 6am on monday"],
+  "packageRules": [
+    {
+      "description": "npm deps and regular `uses: owner/repo@sha` action pins are already handled by .github/dependabot.yml. Renovate exists solely for what Dependabot's github-actions parser explicitly does not support: Docker image digests in a job's `container:`/`services:` fields, or a `uses: docker://...` step (confirmed by reading dependabot-core's file_parser.rb, which skips `docker://` refs with a standing TODO and never inspects `container:` at all) - see docs/supply-chain-security.md.",
+      "matchDepTypes": ["action", "github-runner", "uses-with"],
+      "enabled": false,
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "The actually-active rule: Docker image digests (e.g. supply-chain.yml's semgrep/semgrep container). Same 7-day cooldown as .github/dependabot.yml, stated explicitly here too.",
+      "matchDepTypes": ["container", "docker", "service"],
+      "enabled": true,
+      "minimumReleaseAge": "7 days"
+    }
+  ]
+}
