@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Locally-generated scan/report output (CI produces these fresh each run)
+*.sarif
+sbom.cdx.json
+gitleaks
+gitleaks_*.tar.gz
+gitleaks_*_checksums.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

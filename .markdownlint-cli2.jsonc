@@ -8,5 +8,6 @@
     "MD060": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["**/node_modules/**"]
+  "ignores": ["**/node_modules/**"],
+  "outputFormatters": [["markdownlint-cli2-formatter-sarif", { "name": "markdownlint-results.sarif" }]]
 }

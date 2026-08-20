@@ -18,6 +18,7 @@ jobs:
   # (other packages' own CI configs, not this repo's).
   sbom:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
@@ -67,6 +68,7 @@ jobs:
   sca:
     needs: sbom
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
@@ -93,6 +95,7 @@ jobs:
 
       - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
           sarif_file: osv-results.sarif
           category: osv-scanner
@@ -101,6 +104,7 @@ jobs:
   # login-free registry rulesets - no Semgrep account/token involved.
   sast:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
@@ -128,6 +132,7 @@ jobs:
 
       - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
           sarif_file: semgrep-results.sarif
           category: semgrep
