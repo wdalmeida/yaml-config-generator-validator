@@ -18,6 +18,41 @@ fully open source) as a second, independent SAST engine, and `.github/workflows/
 `gitleaks` job scans for secrets on every push/PR (MIT-licensed; also runs locally as a
 pre-commit hook - see `CLAUDE.md`).
 
+## GitHub Actions-specific security linting (`zizmor`)
+
+`actionlint` (in `ci.yml`) checks workflow syntax and embedded shell via shellcheck; Semgrep's
+rulesets (above) are generic source-code rules. Neither catches issues specific to how GitHub
+Actions itself works - so `.github/workflows/ci.yml`'s `zizmor` job runs
+[zizmor](https://github.com/zizmorcore/zizmor) (Apache-2.0/MIT, `pip install
+zizmor==1.29.0`), which found (and this repo fixed) three real, non-hypothetical issues during
+setup:
+
+- **`excessive-permissions`**: `deploy.yml` declared `pages: write`/`id-token: write` at the
+  workflow level, so both its `build` and `deploy` jobs got them even though only `deploy`
+  needs them - moved down to the `deploy` job's own `permissions:` block.
+- **`artipacked`**: every `actions/checkout` step across every workflow now sets
+  `persist-credentials: false` - none of these jobs need the checked-out git credential to
+  push anything back, so leaving it persisted only gave a later step in the same job (e.g. a
+  compromised `npm ci` dependency) something to steal for nothing.
+- **`template-injection`**: `release.yml`'s `gh release upload` step interpolated
+  `${{ needs.release.outputs.tag_name }}` directly into the `run:` shell string - moved to an
+  environment variable (`TAG_NAME`) instead, so the value is never spliced into the command
+  text itself.
+
+Run it locally before editing any workflow file: `uvx zizmor==1.29.0 .` (or
+`GH_TOKEN=$(gh auth token) uvx zizmor==1.29.0 .` to match CI's online mode, which resolves a
+few audits offline mode can't).
+
+## The release artifact gets its own attestation
+
+`supply-chain.yml`'s `sbom` job attests a `dist/` build on every ordinary push to `main` - but
+that's *not* the file anyone downloads. `release.yml`'s `build-and-attach` job does an
+independent build against the actual release tag, zips it to `dist.zip`, and attaches that to
+the GitHub Release. Since v-next, `build-and-attach` generates its own SBOM (same Syft flags as
+above) and runs `attest-sbom` + `attest-build-provenance` against `dist.zip` itself before
+uploading it - so the artifact that ships is the one with provenance, not a same-source but
+uncorrelated stand-in.
+
 ## Why the SBOM excludes some things
 
 - **Go stdlib inside TypeScript 7's native `tsc` binary**: TypeScript 7 ships a
