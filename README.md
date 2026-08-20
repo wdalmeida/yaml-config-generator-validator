@@ -23,3 +23,4 @@ npm run dev
 
 - [Adding or updating a config schema](docs/adding-a-schema.md)
 - [Deploying to GitHub Pages](docs/deploying-to-github-pages.md)
+- [Supply chain security](docs/supply-chain-security.md) — SBOM, attestations, SCA/SAST scanning

@@ -1,0 +1,133 @@
+name: Supply Chain
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Generates a CycloneDX SBOM covering both the npm dependency tree (including dev
+  # dependencies - these are "the tools" too) and the GitHub Actions used by this repo's own
+  # workflows. Excludes the Go standard library version embedded in TypeScript 7's native
+  # tsc binary (@typescript/typescript-*) - that's TypeScript's own build toolchain, not
+  # something this repo can patch, and it otherwise drowns the SBOM in irrelevant Go stdlib
+  # CVEs. Also excludes .github/workflows/*.yml files that ship *inside* node_modules
+  # (other packages' own CI configs, not this repo's).
+  sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Generate SBOM (CycloneDX, via Syft)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        env:
+          SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES: "true"
+          SYFT_EXCLUDE: "./node_modules/**/.github/**,./dist/**"
+          SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger"
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom.cdx.json
+          upload-artifact: true
+          upload-artifact-retention: 90
+
+      # Attestations bind the SBOM/build to this exact commit+workflow run via Sigstore
+      # (keyless signing, no secrets to manage) and publish to the repo's Attestations tab.
+      # Only meaningful for the real build on main - not PRs, which may come from forks
+      # without the write access this requires anyway.
+      - name: Attest SBOM
+        if: github.event_name == 'push'
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/**
+          sbom-path: sbom.cdx.json
+
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/**
+
+  # SCA: scans the SBOM generated above (not just the lockfile) against the OSV.dev
+  # vulnerability database. OSV-Scanner is Apache-2.0 (FOSS).
+  sca:
+    needs: sbom
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom.cdx.json
+
+      - name: Scan SBOM for known vulnerabilities (OSV-Scanner)
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        with:
+          scan-args: |-
+            --sbom=./sbom.cdx.json
+            --format=sarif
+            --output-file=osv-results.sarif
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: osv-scan-results
+          path: osv-results.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        with:
+          sarif_file: osv-results.sarif
+          category: osv-scanner
+
+  # SAST: scans the actual source with Semgrep's OSS engine (LGPL-2.1) using only public,
+  # login-free registry rulesets - no Semgrep account/token involved.
+  sast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    container:
+      image: semgrep/semgrep@sha256:67319956da3dcb58baf5b322899c15458e3963e7018a86aeeb5cd224e69cb77a # 1.173.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/typescript \
+            --config=p/react \
+            --exclude=node_modules --exclude=dist \
+            --metrics=off \
+            --sarif --output=semgrep-results.sarif
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: semgrep-scan-results
+          path: semgrep-results.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep

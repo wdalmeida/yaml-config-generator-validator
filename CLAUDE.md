@@ -29,10 +29,11 @@ npm audit --audit-level=high   # dependency vulnerability check
 
 Linting uses **oxlint**, not eslint — config is `.oxlintrc.json`.
 
-Three workflows in `.github/workflows/`:
+Four workflows in `.github/workflows/`, every `uses:` pinned to a full commit SHA with a `# vX.Y.Z` comment (not even a floating major-version tag — those are mutable too; Semgrep's `p/security-audit` ruleset in `supply-chain.yml`'s `sast` job enforces this) — see `docs/supply-chain-security.md`:
 
 - `ci.yml` — on every push to `main` and every PR: `test` (lint, build, test - the same three commands above), `schemas` (`lint:schemas`), `markdown` (`lint:md` + `lint:links`), `audit` (`npm audit --audit-level=high`), `actionlint` (lints the workflow YAML files themselves - install via the [official script](https://github.com/rhysd/actionlint), same as `brew install actionlint` locally), `gitleaks` (secret scanning - also runs locally as a pre-commit hook, so this is defense-in-depth for PRs from forks where the hook isn't installed).
 - `codeql.yml` — GitHub's standard CodeQL SAST template for JS/TS, on push/PR to `main` plus a weekly schedule. Needs GitHub code scanning enabled for the repo (automatic for public repos; private repos need GitHub Advanced Security).
+- `supply-chain.yml` — `sbom` (generates a CycloneDX SBOM via Syft, uploads it as an artifact, and on push to `main` attests both the SBOM and the `dist/` build's provenance via Sigstore), `sca` (scans that SBOM with OSV-Scanner), `sast` (scans the source with Semgrep's OSS engine, free public rulesets only, no account needed). All three tools are FOSS (Apache-2.0/Apache-2.0/LGPL-2.1). `.github/dependabot.yml` keeps both npm deps and every SHA-pinned action current automatically.
 - `deploy.yml` — only builds and publishes `dist/` to GitHub Pages on push to `main` (see `docs/deploying-to-github-pages.md`); doesn't lint or test.
 
 ## Architecture

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  # Dependabot understands the `uses: owner/repo@<sha> # vX.Y.Z` pinning convention used
+  # throughout .github/workflows/ - it opens a PR updating both the SHA and the comment
+  # together, so pinning to a commit (rather than a floating tag) doesn't mean manual upkeep.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
