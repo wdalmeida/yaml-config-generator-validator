@@ -10,7 +10,7 @@ and every PR. All tools involved are free and open source (licenses noted below)
 |---|---|---|---|
 | `sbom` | [Syft](https://github.com/anchore/syft) (via `anchore/sbom-action`) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
 | `sbom` | `actions/attest` (SBOM) + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
-| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Scans the SBOM generated above (not just the lockfile) against the [OSV.dev](https://osv.dev) vulnerability database. Results go to **Security → Code scanning** (SARIF) and as a downloadable artifact. |
+| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Two independent passes against the [OSV.dev](https://osv.dev) vulnerability database: one scans the SBOM generated above, one scans the checked-out repo's own `package-lock.json` directly (see below for why both). Results go to **Security → Code scanning** (SARIF, two categories) and as downloadable artifacts. |
 | `sast` | [Semgrep](https://github.com/semgrep/semgrep) OSS engine | LGPL-2.1 | Scans the actual source with public, login-free registry rulesets (`p/security-audit`, `p/owasp-top-ten`, `p/typescript`, `p/react`) - no Semgrep account or token involved. Results go to **Security → Code scanning** and as an artifact. |
 
 Separately, `.github/workflows/codeql.yml` runs GitHub's CodeQL SAST (free for public repos, not
@@ -58,6 +58,29 @@ deprecated in favor of `actions/attest`... all of the existing action inputs are
 in favor of the generic `actions/attest` action, using the exact same `subject-path`/
 `sbom-path` inputs - so both SBOM-attesting steps in this repo use `actions/attest` directly.
 `actions/attest-build-provenance` is not deprecated and stays as-is.
+
+## Why `sca` scans both the SBOM and the repository directly
+
+`osv-scanner scan source -L ./sbom.cdx.json` only ever sees what Syft chose to catalog into
+`sbom.cdx.json` - a bug or gap in Syft's cataloging (or a deliberate `SYFT_EXCLUDE`/
+`SYFT_SELECT_CATALOGERS` setting, see below) would silently narrow what `sca` can find. Running
+`osv-scanner scan source -r .` against the freshly checked-out repo is a second, independently
+sourced pass: it parses `package-lock.json` itself, with no dependency on the SBOM job having
+run correctly first. Neither replaces the other - the SBOM pass is also what proves the exact
+artifact that got attested (above) was the one scanned; the repository pass is what proves the
+scan doesn't depend on Syft. Both use the same OSV-Scanner action and OSV.dev database, so
+running both isn't duplicating a check, it's removing a single point of failure.
+
+One byproduct worth knowing: the SBOM includes non-package entries (this repo's own
+`.github/workflows/*.yml` files, and `package-lock.json` itself, both added by Syft's
+respective catalogers as generic "file" components) that have no [Package URL][purl] for
+OSV-Scanner to match against - these log as `Neither CPE nor PURL found for package: ...`
+in the `sca` job's "Scan SBOM..." step. That's expected noise from files Syft catalogs for
+other reasons (the GitHub Actions cataloger, a generic file cataloger), not a sign that real
+npm dependencies are being skipped - the scan still reports the actual package count found
+(currently ~420) and exits successfully once every real dependency is checked.
+
+[purl]: https://github.com/package-url/purl-spec
 
 ## Why the SBOM excludes some things
 
@@ -129,8 +152,9 @@ SYFT_EXCLUDE='./node_modules/**/.github/**,./dist/**' \
 SYFT_SELECT_CATALOGERS='-go-module-binary-cataloger' \
 syft . -o cyclonedx-json=sbom.cdx.json
 
-# SCA: scan that SBOM
-osv-scanner scan source --sbom=./sbom.cdx.json
+# SCA: scan that SBOM, and separately scan the repository/lockfile directly
+osv-scanner scan source --lockfile=./sbom.cdx.json
+osv-scanner scan source -r .
 
 # SAST
 semgrep scan --config=p/security-audit --config=p/owasp-top-ten \
