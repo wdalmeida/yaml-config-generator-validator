@@ -9,7 +9,7 @@ and every PR. All tools involved are free and open source (licenses noted below)
 | Job | Tool | License | What it does |
 |---|---|---|---|
 | `sbom` | [Syft](https://github.com/anchore/syft) (via `anchore/sbom-action`) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
-| `sbom` | `actions/attest-sbom` + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
+| `sbom` | `actions/attest` (SBOM) + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
 | `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Scans the SBOM generated above (not just the lockfile) against the [OSV.dev](https://osv.dev) vulnerability database. Results go to **Security → Code scanning** (SARIF) and as a downloadable artifact. |
 | `sast` | [Semgrep](https://github.com/semgrep/semgrep) OSS engine | LGPL-2.1 | Scans the actual source with public, login-free registry rulesets (`p/security-audit`, `p/owasp-top-ten`, `p/typescript`, `p/react`) - no Semgrep account or token involved. Results go to **Security → Code scanning** and as an artifact. |
 
@@ -49,9 +49,15 @@ few audits offline mode can't).
 that's *not* the file anyone downloads. `release.yml`'s `build-and-attach` job does an
 independent build against the actual release tag, zips it to `dist.zip`, and attaches that to
 the GitHub Release. Since v-next, `build-and-attach` generates its own SBOM (same Syft flags as
-above) and runs `attest-sbom` + `attest-build-provenance` against `dist.zip` itself before
-uploading it - so the artifact that ships is the one with provenance, not a same-source but
-uncorrelated stand-in.
+above) and runs `attest` (for the SBOM) + `attest-build-provenance` against `dist.zip` itself
+before uploading it - so the artifact that ships is the one with provenance, not a same-source
+but uncorrelated stand-in.
+
+`actions/attest-sbom` is deprecated (confirmed via its own README: "this action is being
+deprecated in favor of `actions/attest`... all of the existing action inputs are compatible")
+in favor of the generic `actions/attest` action, using the exact same `subject-path`/
+`sbom-path` inputs - so both SBOM-attesting steps in this repo use `actions/attest` directly.
+`actions/attest-build-provenance` is not deprecated and stays as-is.
 
 ## Why the SBOM excludes some things
 
