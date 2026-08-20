@@ -29,3 +29,4 @@ npm test              # or: npm run test:coverage
 - [Adding or updating a config schema](docs/adding-a-schema.md)
 - [Deploying to GitHub Pages](docs/deploying-to-github-pages.md)
 - [Supply chain security](docs/supply-chain-security.md) — SBOM, attestations, SCA/SAST scanning
+- [Releasing](docs/releasing.md) — Conventional Commits, automated versioning/changelog/tags
