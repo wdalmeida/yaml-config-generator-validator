@@ -171,3 +171,16 @@ Docker image - see the pinned digest in `supply-chain.yml` for the exact version
 Attestations, code scanning alerts, and the Attestations tab are all **GitHub-side** features -
 they only exist once this repo is actually pushed to GitHub and a workflow run has completed
 there. Nothing about generating the workflow files here "publishes" anything by itself.
+
+## Moving a scan into a reusable workflow resets its code-scanning baseline once
+
+GitHub identifies a code-scanning configuration by `<workflow file>:<job name>` - not by SARIF
+category alone. When `sca-sbom`/`sca-source` started calling the shared `osv-scan.yml` reusable
+workflow, the job that actually runs the scan is named `scan` (the job id inside `osv-scan.yml`),
+so the configuration key became `supply-chain.yml:scan` instead of the old `supply-chain.yml:sca`.
+GitHub can't diff a PR's alerts against a configuration that has no baseline yet, so a PR touching
+this may show "1 configuration not found" for `osv-scanner` on the Checks tab - this is expected,
+not a sign anything's broken. It's a one-time transition: once such a PR merges, `main` runs
+under the new key and every subsequent PR diffs normally again. It's also not a real coverage
+gap, since it only matters if there are existing alerts to lose track of, and (checked directly
+via `gh api repos/<owner>/<repo>/code-scanning/alerts`) this repo has none.
