@@ -156,7 +156,7 @@ syft . -o cyclonedx-json=sbom.cdx.json
 
 # SCA: scan that SBOM, and separately scan the repository/lockfile directly
 osv-scanner scan source --lockfile=./sbom.cdx.json
-osv-scanner scan source -r .
+osv-scanner scan source -r --experimental-exclude=./node_modules,./dist .
 
 # SAST
 semgrep scan --config=p/security-audit --config=p/owasp-top-ten \
