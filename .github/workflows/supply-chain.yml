@@ -72,6 +72,9 @@ jobs:
   # in Syft's cataloging wouldn't be caught by scanning only its own output. Each pass runs as its
   # own job (via the shared osv-scan.yml reusable workflow) so the source pass, which needs
   # nothing from the sbom job, isn't forced to wait on it.
+  # sca-sbom and sca-source each restate this same permissions block rather than sharing it via
+  # a YAML anchor - zizmor's own docs mark its anchor analysis as beta/less reliable, not worth
+  # trading away for three duplicated lines in a repo that leans on zizmor as a security gate.
   sca-sbom:
     needs: sbom
     permissions:
@@ -84,10 +87,7 @@ jobs:
       # --sbom was deprecated by osv-scanner in favor of --lockfile (which auto-detects SBOM
       # vs. lockfile format from the filename - sbom.cdx.json matches CycloneDX's naming
       # convention).
-      scan-args: |-
-        --lockfile=./sbom.cdx.json
-        --format=sarif
-        --output-file=osv-results-sbom.sarif
+      scan-target: --lockfile=./sbom.cdx.json
       result-name: sbom
       category: osv-scanner-sbom
 
@@ -98,21 +98,26 @@ jobs:
       actions: read
     uses: ./.github/workflows/osv-scan.yml
     with:
-      scan-args: |-
+      # node_modules/dist are excluded explicitly (not just relying on osv-scanner's default
+      # .gitignore-aware skipping) so this stays correct even if a vendored dependency ships its
+      # own package-lock.json - same defense-in-depth reasoning as the sbom job's SYFT_EXCLUDE.
+      scan-target: |-
         --recursive
-        --format=sarif
-        --output-file=osv-results-source.sarif
+        --experimental-exclude=./node_modules,./dist
         .
       result-name: source
       category: osv-scanner-source
 
+  # NOTE: if a third OSV-Scanner pass is ever added, add it to both needs: below and the if:
+  # condition, or its failures won't be surfaced here.
   sca-result:
     needs: [sca-sbom, sca-source]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Fail job if either OSV-Scanner pass reported an issue (vulnerabilities found or a scan error)
-        if: needs.sca-sbom.outputs.outcome == 'failure' || needs.sca-source.outputs.outcome == 'failure'
+      - name: Fail job if either OSV-Scanner pass reported an issue (vulnerabilities found, a scan error, or the job itself didn't run)
+        if: needs.sca-sbom.result != 'success' || needs.sca-source.result != 'success'
         run: exit 1
 
   # SAST: scans the actual source with Semgrep's OSS engine (LGPL-2.1) using only public,
