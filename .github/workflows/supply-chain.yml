@@ -39,7 +39,7 @@ jobs:
         env:
           SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES: "true"
           SYFT_EXCLUDE: "./node_modules/**/.github/**,./dist/**"
-          SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger"
+          SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger,-file-metadata-cataloger,-file-digest-cataloger"
         with:
           path: .
           format: cyclonedx-json
@@ -65,42 +65,55 @@ jobs:
         with:
           subject-path: dist/**
 
-  # SCA: scans the SBOM generated above (not just the lockfile) against the OSV.dev
-  # vulnerability database. OSV-Scanner is Apache-2.0 (FOSS).
-  sca:
+  # SCA: two independent OSV-Scanner (Apache-2.0, FOSS) passes against the OSV.dev vulnerability
+  # database - one against the Syft-generated SBOM above, one against the checked-out repo's own
+  # lockfile/source directly. These aren't redundant: the SBOM pass only sees whatever Syft chose
+  # to catalog, while the source pass parses package-lock.json itself independently - a bug or gap
+  # in Syft's cataloging wouldn't be caught by scanning only its own output. Each pass runs as its
+  # own job (via the shared osv-scan.yml reusable workflow) so the source pass, which needs
+  # nothing from the sbom job, isn't forced to wait on it.
+  sca-sbom:
     needs: sbom
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
       actions: read
+    uses: ./.github/workflows/osv-scan.yml
+    with:
+      download-sbom-artifact: true
+      # --sbom was deprecated by osv-scanner in favor of --lockfile (which auto-detects SBOM
+      # vs. lockfile format from the filename - sbom.cdx.json matches CycloneDX's naming
+      # convention).
+      scan-args: |-
+        --lockfile=./sbom.cdx.json
+        --format=sarif
+        --output-file=osv-results-sbom.sarif
+      result-name: sbom
+      category: osv-scanner-sbom
+
+  sca-source:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/osv-scan.yml
+    with:
+      scan-args: |-
+        --recursive
+        --format=sarif
+        --output-file=osv-results-source.sarif
+        .
+      result-name: source
+      category: osv-scanner-source
+
+  sca-result:
+    needs: [sca-sbom, sca-source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: sbom.cdx.json
-
-      - name: Scan SBOM for known vulnerabilities (OSV-Scanner)
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
-        with:
-          scan-args: |-
-            --sbom=./sbom.cdx.json
-            --format=sarif
-            --output-file=osv-results.sarif
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: osv-scan-results
-          path: osv-results.sarif
-          retention-days: 90
-
-      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
-        if: always()
-        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
-        with:
-          sarif_file: osv-results.sarif
-          category: osv-scanner
+      - name: Fail job if either OSV-Scanner pass reported an issue (vulnerabilities found or a scan error)
+        if: needs.sca-sbom.outputs.outcome == 'failure' || needs.sca-source.outputs.outcome == 'failure'
+        run: exit 1
 
   # SAST: scans the actual source with Semgrep's OSS engine (LGPL-2.1) using only public,
   # login-free registry rulesets - no Semgrep account/token involved.

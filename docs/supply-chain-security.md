@@ -10,7 +10,7 @@ and every PR. All tools involved are free and open source (licenses noted below)
 |---|---|---|---|
 | `sbom` | [Syft](https://github.com/anchore/syft) (via `anchore/sbom-action`) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
 | `sbom` | `actions/attest` (SBOM) + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
-| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Scans the SBOM generated above (not just the lockfile) against the [OSV.dev](https://osv.dev) vulnerability database. Results go to **Security → Code scanning** (SARIF) and as a downloadable artifact. |
+| `sca-sbom` / `sca-source` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Two independent passes against the [OSV.dev](https://osv.dev) vulnerability database, each its own job (both call the shared `osv-scan.yml` reusable workflow): `sca-sbom` scans the SBOM generated above, `sca-source` scans the checked-out repo's own `package-lock.json` directly (see below for why both) - `sca-source` has no dependency on the `sbom` job. A final `sca-result` job fails if either pass reported an issue. Results go to **Security → Code scanning** (SARIF, two categories) and as downloadable artifacts. |
 | `sast` | [Semgrep](https://github.com/semgrep/semgrep) OSS engine | LGPL-2.1 | Scans the actual source with public, login-free registry rulesets (`p/security-audit`, `p/owasp-top-ten`, `p/typescript`, `p/react`) - no Semgrep account or token involved. Results go to **Security → Code scanning** and as an artifact. |
 
 Separately, `.github/workflows/codeql.yml` runs GitHub's CodeQL SAST (free for public repos, not
@@ -59,6 +59,18 @@ in favor of the generic `actions/attest` action, using the exact same `subject-p
 `sbom-path` inputs - so both SBOM-attesting steps in this repo use `actions/attest` directly.
 `actions/attest-build-provenance` is not deprecated and stays as-is.
 
+## Why `sca-sbom` and `sca-source` scan both the SBOM and the repository directly
+
+`osv-scanner scan source -L ./sbom.cdx.json` only ever sees what Syft chose to catalog into
+`sbom.cdx.json` - a bug or gap in Syft's cataloging (or a deliberate `SYFT_EXCLUDE`/
+`SYFT_SELECT_CATALOGERS` setting, see below) would silently narrow what `sca` can find. Running
+`osv-scanner scan source -r .` against the freshly checked-out repo is a second, independently
+sourced pass: it parses `package-lock.json` itself, with no dependency on the SBOM job having
+run correctly first. Neither replaces the other - the SBOM pass is also what proves the exact
+artifact that got attested (above) was the one scanned; the repository pass is what proves the
+scan doesn't depend on Syft. Both use the same OSV-Scanner action and OSV.dev database, so
+running both isn't duplicating a check, it's removing a single point of failure.
+
 ## Why the SBOM excludes some things
 
 - **Go stdlib inside TypeScript 7's native `tsc` binary**: TypeScript 7 ships a
@@ -66,10 +78,23 @@ in favor of the generic `actions/attest` action, using the exact same `subject-p
   cataloger detects the embedded Go stdlib version and reports its CVEs - which aren't
   something this repo can patch (only the TypeScript team can, by rebuilding against a newer
   Go toolchain), and drowned out every real finding in early testing (150 Go stdlib CVEs, 0
-  real ones). Excluded via `SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger"`.
+  real ones). Excluded via `-go-module-binary-cataloger`.
 - **`.github/workflows/*.yml` files shipped inside `node_modules`**: some npm packages include
   their own CI configs in their published source. Syft's GitHub Actions cataloger otherwise
   reports *their* action pins as if this repo used them. Excluded via `SYFT_EXCLUDE`.
+- **Raw file entries for this repo's own `.github/workflows/*.yml` files and
+  `package-lock.json`**: separately from the *package* catalogers (which correctly emit a
+  proper `pkg:github/...`-purled component per `uses:` line, and a `pkg:npm/...`-purled
+  component per dependency), Syft's `file-metadata-cataloger` and `file-digest-cataloger` also
+  emit each of those source files themselves as bare `type: file` components with no purl -
+  essentially duplicate, hash-only records of files whose real package data is already
+  captured elsewhere. OSV-Scanner can't match a purl-less file against anything, so it logs
+  `Neither CPE nor PURL found for package: ...` once per file - confirmed by generating the
+  SBOM locally and inspecting it (`syft . -o syft-json=...`): the real `actions/checkout`
+  entry has its own `pkg:github/actions/checkout@v7.0.1` purl regardless, and removing these
+  two catalogers dropped exactly those file-only entries (427 → 421 components) with zero
+  npm/GitHub-Actions package data lost. Excluded via
+  `-file-metadata-cataloger,-file-digest-cataloger`.
 
 If you regenerate the SBOM locally, use the same flags (see below) or you'll see this noise
 return.
@@ -126,11 +151,12 @@ repos. Nothing runs until that's done.
 # SBOM (matches the CI job's flags exactly)
 SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES=true \
 SYFT_EXCLUDE='./node_modules/**/.github/**,./dist/**' \
-SYFT_SELECT_CATALOGERS='-go-module-binary-cataloger' \
+SYFT_SELECT_CATALOGERS='-go-module-binary-cataloger,-file-metadata-cataloger,-file-digest-cataloger' \
 syft . -o cyclonedx-json=sbom.cdx.json
 
-# SCA: scan that SBOM
-osv-scanner scan source --sbom=./sbom.cdx.json
+# SCA: scan that SBOM, and separately scan the repository/lockfile directly
+osv-scanner scan source --lockfile=./sbom.cdx.json
+osv-scanner scan source -r .
 
 # SAST
 semgrep scan --config=p/security-audit --config=p/owasp-top-ten \
@@ -145,3 +171,16 @@ Docker image - see the pinned digest in `supply-chain.yml` for the exact version
 Attestations, code scanning alerts, and the Attestations tab are all **GitHub-side** features -
 they only exist once this repo is actually pushed to GitHub and a workflow run has completed
 there. Nothing about generating the workflow files here "publishes" anything by itself.
+
+## Moving a scan into a reusable workflow resets its code-scanning baseline once
+
+GitHub identifies a code-scanning configuration by `<workflow file>:<job name>` - not by SARIF
+category alone. When `sca-sbom`/`sca-source` started calling the shared `osv-scan.yml` reusable
+workflow, the job that actually runs the scan is named `scan` (the job id inside `osv-scan.yml`),
+so the configuration key became `supply-chain.yml:scan` instead of the old `supply-chain.yml:sca`.
+GitHub can't diff a PR's alerts against a configuration that has no baseline yet, so a PR touching
+this may show "1 configuration not found" for `osv-scanner` on the Checks tab - this is expected,
+not a sign anything's broken. It's a one-time transition: once such a PR merges, `main` runs
+under the new key and every subsequent PR diffs normally again. It's also not a real coverage
+gap, since it only matters if there are existing alerts to lose track of, and (checked directly
+via `gh api repos/<owner>/<repo>/code-scanning/alerts`) this repo has none.
