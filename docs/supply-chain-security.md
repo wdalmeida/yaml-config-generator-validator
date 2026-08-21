@@ -10,7 +10,7 @@ and every PR. All tools involved are free and open source (licenses noted below)
 |---|---|---|---|
 | `sbom` | [Syft](https://github.com/anchore/syft) (via `anchore/sbom-action`) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
 | `sbom` | `actions/attest` (SBOM) + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
-| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Two independent passes against the [OSV.dev](https://osv.dev) vulnerability database: one scans the SBOM generated above, one scans the checked-out repo's own `package-lock.json` directly (see below for why both). Results go to **Security → Code scanning** (SARIF, two categories) and as downloadable artifacts. |
+| `sca-sbom` / `sca-source` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Two independent passes against the [OSV.dev](https://osv.dev) vulnerability database, each its own job (both call the shared `osv-scan.yml` reusable workflow): `sca-sbom` scans the SBOM generated above, `sca-source` scans the checked-out repo's own `package-lock.json` directly (see below for why both) - `sca-source` has no dependency on the `sbom` job. A final `sca-result` job fails if either pass reported an issue. Results go to **Security → Code scanning** (SARIF, two categories) and as downloadable artifacts. |
 | `sast` | [Semgrep](https://github.com/semgrep/semgrep) OSS engine | LGPL-2.1 | Scans the actual source with public, login-free registry rulesets (`p/security-audit`, `p/owasp-top-ten`, `p/typescript`, `p/react`) - no Semgrep account or token involved. Results go to **Security → Code scanning** and as an artifact. |
 
 Separately, `.github/workflows/codeql.yml` runs GitHub's CodeQL SAST (free for public repos, not
@@ -59,7 +59,7 @@ in favor of the generic `actions/attest` action, using the exact same `subject-p
 `sbom-path` inputs - so both SBOM-attesting steps in this repo use `actions/attest` directly.
 `actions/attest-build-provenance` is not deprecated and stays as-is.
 
-## Why `sca` scans both the SBOM and the repository directly
+## Why `sca-sbom` and `sca-source` scan both the SBOM and the repository directly
 
 `osv-scanner scan source -L ./sbom.cdx.json` only ever sees what Syft chose to catalog into
 `sbom.cdx.json` - a bug or gap in Syft's cataloging (or a deliberate `SYFT_EXCLUDE`/
