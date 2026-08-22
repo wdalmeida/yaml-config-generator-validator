@@ -7,12 +7,12 @@ name: OSV-Scanner pass
 on:
   workflow_call:
     inputs:
-      scan-args:
-        description: osv-scanner CLI args (the --format/--output-file flags and scan target)
+      scan-target:
+        description: osv-scanner CLI args identifying what to scan (e.g. --lockfile=./sbom.cdx.json, or --recursive .) - the --format/--output-file flags are added by this workflow, derived from result-name
         required: true
         type: string
       result-name:
-        description: Suffix used for the uploaded artifact name and the SARIF file (must match the --output-file in scan-args, e.g. osv-results-<result-name>.sarif)
+        description: Suffix used for the uploaded artifact name and the SARIF file (osv-results-<result-name>.sarif)
         required: true
         type: string
       category:
@@ -20,14 +20,10 @@ on:
         required: true
         type: string
       download-sbom-artifact:
-        description: Download the sbom.cdx.json artifact from the sbom job before scanning
+        description: Download the sbom.cdx.json artifact from the sbom job before scanning, instead of checking out the repository
         required: false
         type: boolean
         default: false
-    outputs:
-      outcome:
-        description: Outcome of the osv-scanner step (success or failure)
-        value: ${{ jobs.scan.outputs.outcome }}
 
 jobs:
   scan:
@@ -37,10 +33,9 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    outputs:
-      outcome: ${{ steps.osv.outcome }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: ${{ !inputs.download-sbom-artifact }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -51,10 +46,15 @@ jobs:
 
       - name: Scan for known vulnerabilities (OSV-Scanner)
         id: osv
-        continue-on-error: true # don't abort here - the upload steps below must still run; the caller decides whether to fail the job
+        # No continue-on-error here: a real finding or scan error fails this job naturally, which
+        # is what the caller's sca-result gate checks via needs.*.result. The if: always() upload
+        # steps below still run regardless of this step's outcome.
         uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
         with:
-          scan-args: ${{ inputs.scan-args }}
+          scan-args: |-
+            ${{ inputs.scan-target }}
+            --format=sarif
+            --output-file=osv-results-${{ inputs.result-name }}.sarif
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
