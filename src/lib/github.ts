@@ -15,7 +15,7 @@ export interface CreateFileLinkOptions extends RepoFileLocation {
 // GitHub rejects this with "A file with the same name already exists" if the path is
 // already tracked on that branch - use buildEditFileUrl instead for that case.
 export function buildCreateFileUrl({ owner, repo, branch, path, content }: CreateFileLinkOptions): string {
-  const base = `https://github.com/${owner}/${repo}/new/${branch}`
+  const base = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/new/${encodeURIComponent(branch)}`
   const params = new URLSearchParams({ filename: path, value: content })
   return `${base}?${params.toString()}`
 }
@@ -28,7 +28,7 @@ export function buildEditFileUrl({ owner, repo, branch, path }: RepoFileLocation
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/')
-  return `https://github.com/${owner}/${repo}/edit/${branch}/${encodedPath}`
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/edit/${encodeURIComponent(branch)}/${encodedPath}`
 }
 
 export type FileExistsResult = 'exists' | 'missing' | 'unknown'

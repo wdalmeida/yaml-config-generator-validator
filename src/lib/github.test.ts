@@ -11,12 +11,25 @@ describe('buildCreateFileUrl', () => {
     expect(params.get('filename')).toBe('configs/tenant.yaml')
     expect(params.get('value')).toBe('tenant: acme\n')
   })
+
+  it('encodes a branch name containing a "#" instead of letting it truncate the query string', () => {
+    const url = buildCreateFileUrl({ ...location, branch: 'feature/fix-#42', content: 'tenant: acme\n' })
+    expect(url.startsWith('https://github.com/acme-co/infra/new/feature%2Ffix-%2342?')).toBe(true)
+    const params = new URL(url).searchParams
+    expect(params.get('filename')).toBe('configs/tenant.yaml')
+    expect(params.get('value')).toBe('tenant: acme\n')
+  })
 })
 
 describe('buildEditFileUrl', () => {
   it('points at the /edit page for the existing file, with no content param', () => {
     const url = buildEditFileUrl(location)
     expect(url).toBe('https://github.com/acme-co/infra/edit/main/configs/tenant.yaml')
+  })
+
+  it('encodes a branch name containing a "#"', () => {
+    const url = buildEditFileUrl({ ...location, branch: 'feature/fix-#42' })
+    expect(url).toBe('https://github.com/acme-co/infra/edit/feature%2Ffix-%2342/configs/tenant.yaml')
   })
 })
 
