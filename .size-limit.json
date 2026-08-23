@@ -1,8 +1,14 @@
 [
   {
-    "name": "JS bundle",
-    "path": "dist/assets/*.js",
-    "limit": "150 KB",
+    "name": "App shell",
+    "path": "dist/assets/index-*.js",
+    "limit": "130 KB",
+    "gzip": true
+  },
+  {
+    "name": "YAML editor (lazy-loaded)",
+    "path": "dist/assets/YamlEditor-*.js",
+    "limit": "115 KB",
     "gzip": true
   },
   {

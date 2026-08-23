@@ -37,7 +37,7 @@ export interface ConfigDefinition<T = Record<string, unknown>> {
 
 // A single blank value for one field, used both to seed a fresh draft and to seed a new
 // row inside a list-object field.
-function emptyValueFor(field: FieldDescriptor): unknown {
+export function emptyValueFor(field: FieldDescriptor): unknown {
   switch (field.type) {
     case 'text':
       return ''
@@ -133,6 +133,38 @@ export function draftToCandidate(fields: FieldDescriptor[], draft: Record<string
     }
   }
   return candidate
+}
+
+// The inverse of draftToCandidate: rebuilds a full draft object from schema-validated data
+// (e.g. parsed from pasted/fetched YAML), so every field type round-trips back into the form -
+// including computed-toggle-group, whose own key never appears in validated data (it's fanned
+// out into its targets' keys instead, see draftToCandidate) and so can't just be spread in.
+export function draftFromCandidate(fields: FieldDescriptor[], candidate: Record<string, unknown>): Record<string, unknown> {
+  const draft: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (field.type === 'list-object') {
+      if (!(field.key in candidate)) {
+        draft[field.key] = emptyValueFor(field)
+      } else {
+        const rows = candidate[field.key] as Record<string, unknown>[]
+        draft[field.key] = rows.map((row) => draftFromCandidate(field.itemFields, row))
+      }
+    } else if (field.type === 'computed-toggle-group') {
+      let base = ''
+      const ticked: Record<string, boolean> = {}
+      for (const target of field.targets) {
+        const value = candidate[target.key]
+        if (typeof value !== 'string') continue
+        ticked[target.key] = true
+        const suffix = `-${target.suffix}`
+        if (!base && value.endsWith(suffix)) base = value.slice(0, -suffix.length)
+      }
+      draft[field.key] = { base, ticked }
+    } else {
+      draft[field.key] = field.key in candidate ? candidate[field.key] : emptyValueFor(field)
+    }
+  }
+  return draft
 }
 
 export type DraftParseResult<T> = { success: true; data: T } | { success: false; issues: string[] }

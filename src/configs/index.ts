@@ -43,4 +43,4 @@ export function getDraftStatus(definition: ConfigDefinition): DraftStatus {
 }
 
 export type { ConfigDefinition, FieldDescriptor } from './types'
-export { emptyDraftFor, parseDraft } from './types'
+export { draftFromCandidate, emptyDraftFor, parseDraft } from './types'

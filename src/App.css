@@ -1,42 +1,70 @@
 .app {
   --border: #d8d8dc;
   --muted: #6b7280;
-  --surface: rgba(0, 0, 0, 0.02);
+  --surface: #fafaf9;
+  --surface-raised: #ffffff;
   --error: #b91c1c;
   --success: #15803d;
   --warn: #b45309;
+  --accent: #d97757;
+  --accent-hover: #c4633f;
+  --accent-soft: rgba(217, 119, 87, 0.12);
+  --accent-contrast: #ffffff;
 
-  max-width: 960px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 2rem 1rem 4rem;
+  padding: var(--space-8) var(--space-4) var(--space-12);
   font-family: system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   .app {
     --border: #3a3a40;
-    --surface: rgba(255, 255, 255, 0.04);
+    --surface: #1c1c1f;
+    --surface-raised: #232326;
     --error: #f87171;
     --success: #4ade80;
     --warn: #fbbf24;
+    --accent: #e08863;
+    --accent-hover: #eb9c7a;
+    --accent-soft: rgba(224, 136, 99, 0.16);
+    --accent-contrast: #1c1c1f;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
   }
 }
 
 .config-tabs {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
   flex-wrap: wrap;
 }
 
 .config-tab {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.4rem 0.9rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: transparent;
+  background: var(--surface-raised);
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -45,8 +73,9 @@
 
 .config-tab.active {
   font-weight: 600;
-  border-color: currentColor;
-  background: var(--surface);
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .status-dot {
@@ -68,8 +97,8 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 320px) 1fr;
-  gap: 1.5rem;
+  grid-template-columns: minmax(240px, 280px) 1fr;
+  gap: var(--space-6);
   align-items: start;
 }
 
@@ -79,25 +108,105 @@
   }
 }
 
-.panel section {
-  margin-bottom: 1.5rem;
-  padding: 1rem 1.1rem;
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* A flat, low-emphasis card - one-time setup (target file location) and per-field rows. */
+.card {
+  padding: var(--space-4) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
-.panel section h2 {
+.card h2 {
   font-size: 1rem;
+}
+
+/* Form field rows sit directly on the page rather than each getting their own bordered card -
+   the surrounding .card here is only a subtle grouping, not meant to compete visually. */
+.card-flat {
+  padding: var(--space-2) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.card-flat:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The unified YAML field: the page's visual hero. Raised surface, soft shadow, larger radius
+   and padding than every other section - everything else stays flatter by comparison. */
+.yaml-panel {
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.yaml-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.yaml-panel-header h2 {
+  margin: 0;
+}
+
+.yaml-editor-host,
+.yaml-editor-fallback {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.yaml-editor-host {
+  min-height: 320px;
+}
+
+.yaml-editor-host .cm-editor {
+  height: 100%;
+}
+
+.yaml-editor-fallback {
+  width: 100%;
+  min-height: 320px;
+  padding: var(--space-3);
+  box-sizing: border-box;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  background: transparent;
+  color: inherit;
+}
+
+.yaml-status {
+  margin-top: var(--space-3);
+  min-height: 1.2em;
+}
+
+.yaml-status .errors {
+  margin-top: 0;
+}
+
+.yaml-panel > button {
+  margin-top: var(--space-3);
 }
 
 button {
   cursor: pointer;
   font: inherit;
-  padding: 0.45rem 0.9rem;
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
   color: inherit;
 }
 
@@ -109,29 +218,29 @@ button:disabled {
 input,
 select,
 textarea {
-  padding: 0.45rem 0.6rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
   color: inherit;
 }
 
 .radio-row {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 
 .list-row {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .github-row {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .github-row input {
@@ -145,22 +254,14 @@ textarea {
 
 .topic-row {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .topic-row input,
 .topic-row select {
   flex: 1;
   min-width: 0;
-}
-
-.yaml-output,
-.yaml-input {
-  width: 100%;
-  font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
-  box-sizing: border-box;
 }
 
 .errors {
@@ -179,12 +280,23 @@ textarea {
 
 .github-link {
   display: inline-block;
-  margin-top: 0.5rem;
-  padding: 0.5rem 1rem;
-  border: 1px solid currentColor;
-  border-radius: 6px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   text-decoration: none;
   color: inherit;
+}
+
+.github-link.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.github-link.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .github-link.disabled {
@@ -193,17 +305,13 @@ textarea {
 }
 
 .github-hint {
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
   font-size: 0.9rem;
   color: var(--muted);
 }
 
-.paste-row {
-  margin: 0.75rem 0;
-}
-
 .field-row {
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .field-row:last-child {
@@ -213,13 +321,13 @@ textarea {
 .field-row > label {
   display: block;
   font-weight: 600;
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--space-1);
   font-size: 0.9rem;
 }
 
 .field-row-inline {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
