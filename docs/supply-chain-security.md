@@ -8,7 +8,7 @@ and every PR. All tools involved are free and open source (licenses noted below)
 
 | Job | Tool | License | What it does |
 |---|---|---|---|
-| `sbom` | [Syft](https://github.com/anchore/syft) (via `anchore/sbom-action`) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
+| `sbom` | [Syft](https://github.com/anchore/syft), installed and run directly (not via `anchore/sbom-action` - see below) | Apache-2.0 | Generates a CycloneDX SBOM covering the full npm dependency tree (including dev dependencies - the tools, not just what ships) and the GitHub Actions this repo's own workflows use. Uploaded as a workflow artifact. |
 | `sbom` | `actions/attest` (SBOM) + `actions/attest-build-provenance` | - | On push to `main` only: cryptographically binds the SBOM, and the `dist/` build output's provenance (which workflow, which commit, which inputs), to this exact build via [Sigstore](https://www.sigstore.dev/) keyless signing. Published to the repo's **Attestations** tab. |
 | `sca-sbom` / `sca-source` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Two independent passes against the [OSV.dev](https://osv.dev) vulnerability database, each its own job (both call the shared `osv-scan.yml` reusable workflow): `sca-sbom` scans the SBOM generated above, `sca-source` scans the checked-out repo's own `package-lock.json` directly (see below for why both) - `sca-source` has no dependency on the `sbom` job. A final `sca-result` job fails if either pass reported an issue. Results go to **Security → Code scanning** (SARIF, two categories) and as downloadable artifacts. |
 | `sast` | [Semgrep](https://github.com/semgrep/semgrep) OSS engine | LGPL-2.1 | Scans the actual source with public, login-free registry rulesets (`p/security-audit`, `p/owasp-top-ten`, `p/typescript`, `p/react`) - no Semgrep account or token involved. Results go to **Security → Code scanning** and as an artifact. |
@@ -56,10 +56,10 @@ trusting a mutable tag/download blindly), and handles its own SARIF and artifact
 internally, so - unlike `zizmor`/`gitleaks` - it needs no hand-written second-run/upload steps
 in `ci.yml`.
 
-### Known Plumber finding blocking CI (`ISSUE-714`)
+### Resolved Plumber finding (`ISSUE-714`): why Syft isn't installed via `anchore/sbom-action`
 
-Plumber's first scan against this repo found a real, unresolved issue at **High** severity
-(score 78/100, grade B): `anchore/sbom-action` (used in both `supply-chain.yml`'s `sbom` job and
+Plumber's first scan against this repo found a real issue at **High** severity (score 78/100,
+grade B): `anchore/sbom-action` (previously used in both `supply-chain.yml`'s `sbom` job and
 `release.yml`'s `build-and-attach` job) downloads Syft by fetching
 `https://raw.githubusercontent.com/anchore/syft/main/install.sh` and piping it to `sh` at
 runtime - confirmed by reading the action's bundled `dist/index.cjs` (`downloadSyft()`)
@@ -68,12 +68,17 @@ pinning `anchore/sbom-action` to a commit SHA (as this repo does everywhere else
 this nested fetch - a compromise of `anchore/syft`'s `main` branch would be picked up on the
 next run regardless of the SBOM action's own pin.
 
-The `plumber` job gates at its default (min-points 100, any finding fails), so **this job fails
-on every push/PR until ISSUE-714 is closed** - it is not soft-failed or suppressed. Closing it
-means either pre-populating the GitHub Actions tool cache with a checksum-verified Syft binary
-before `anchore/sbom-action` runs (so its own `find()` call short-circuits the mutable-ref
-download), or replacing `anchore/sbom-action` with a manually-installed, checksum-verified Syft
-step in both `supply-chain.yml` and `release.yml`.
+`ISSUE-714` is a static check with no per-finding waiver (only a whole-control on/off toggle in
+`.plumber.yaml`) - it flags `anchore/sbom-action`'s mere presence regardless of any caller-side
+mitigation, confirmed via Plumber's own docs. So rather than working around the action (or
+disabling the control entirely, which would also stop flagging this same pattern in any other
+action added later), both jobs install and run Syft directly: a checksum-verified download from
+Syft's own GitHub Releases (same pattern as `ci.yml`'s `gitleaks` install), added to `PATH`, then
+invoked as `syft scan dir:. -o cyclonedx-json`. This is a faithful equivalent of what
+`anchore/sbom-action` was doing internally (confirmed by reading its bundled source: it runs
+exactly that command and writes the captured stdout to `output-file` itself) - same `SYFT_*` env
+vars, since those are native Syft config read regardless of how the binary is invoked. Plumber
+now scores this repo 100/100.
 
 ## The release artifact gets its own attestation
 
