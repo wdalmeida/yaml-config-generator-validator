@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDraftFor, parseDraft } from './types'
+import { draftFromCandidate, emptyDraftFor, parseDraft } from './types'
 import { getConfigDefinition } from './index'
 import tenantConfigSchema from './schemas/tenant-config.schema.json'
 
@@ -120,5 +120,41 @@ describe('parseDraft', () => {
     const draft = { ...validCiDraft, 'computed-group-0': { base: '', ticked: { registryDocker: true } } }
     const result = parseDraft(ciConfigDefinition, draft)
     expect(result.success).toBe(false)
+  })
+})
+
+describe('draftFromCandidate', () => {
+  it('round-trips plain fields straight through', () => {
+    const candidate = {
+      tenant: 'acme',
+      product: 'checkout',
+      proxyEntries: ['*.github.com'],
+      githubTopics: [{ method: 'artefact', name: 'billing', description: 'Billing service' }],
+    }
+    expect(draftFromCandidate(tenantConfigDefinition.fields, candidate)).toEqual(candidate)
+  })
+
+  it('reconstructs a computed-toggle-group from a single ticked target', () => {
+    const candidate = { ...validCiDraft, registryDocker: 'myregistry-docker' }
+    delete (candidate as Record<string, unknown>)['computed-group-0']
+    const draft = draftFromCandidate(ciConfigDefinition.fields, candidate)
+    expect(draft['computed-group-0']).toEqual({ base: 'myregistry', ticked: { registryDocker: true } })
+  })
+
+  it('reconstructs a computed-toggle-group from every ticked target sharing one base', () => {
+    const candidate = { ...validCiDraft, registryDocker: 'myregistry-docker', registryMaven: 'myregistry-maven' }
+    delete (candidate as Record<string, unknown>)['computed-group-0']
+    const draft = draftFromCandidate(ciConfigDefinition.fields, candidate)
+    expect(draft['computed-group-0']).toEqual({
+      base: 'myregistry',
+      ticked: { registryDocker: true, registryMaven: true },
+    })
+  })
+
+  it('leaves a computed-toggle-group blank when no target is present', () => {
+    const candidate = { ...validCiDraft }
+    delete (candidate as Record<string, unknown>)['computed-group-0']
+    const draft = draftFromCandidate(ciConfigDefinition.fields, candidate)
+    expect(draft['computed-group-0']).toEqual({ base: '', ticked: {} })
   })
 })

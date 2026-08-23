@@ -2,11 +2,12 @@
 
 A small static site that helps users fill out and validate the YAML config files required by our software, instead of hand-editing them and making mistakes. Handles multiple file types in parallel — Tenant Config, CI, CD, Env, Protection — switchable via the pill strip, each with its own schema and its own saved draft.
 
-Each config type is one two-column screen: the left column (fetch from GitHub or paste YAML,
-then Validate or Load into form) is the same across every type; the right column has that
-type's own fields, the generated YAML, and Push to GitHub — copy it, push it as a new file via
-a prefilled "create file" link, or update an existing one (copies the YAML for you, since
-GitHub can't prefill an edit).
+Each config type is one two-column screen: the left column has target file location and that
+type's own fields, scrolling normally as the form grows; the right column is one live, editable
+YAML field, pinned in view as you scroll the form so it's never out of sight — fill in the form
+and watch it update, or fetch/paste/edit YAML directly and watch the form sync back once it's
+valid. Push it as a new file via a prefilled "create file" link, or update an existing one
+(copies the YAML for you, since GitHub can't prefill an edit).
 
 CI/CD/Env/Protection schemas are placeholders pending real field specs — see `CLAUDE.md`.
 

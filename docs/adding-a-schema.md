@@ -206,8 +206,8 @@ push-to-GitHub all working identically to every other type. Add `"foo"` to `DISP
 npm run build   # tsc catches most structural mistakes early (missing required keys, etc.)
 npm test        # npx vitest run src/configs/json-schema.test.ts covers the converter itself;
                 # src/configs/types.test.ts covers the shared draft-filtering helpers
-npm run dev     # manually: pick the pill, fill the form, check Output YAML, and paste a
-                # matching file into the left column's Load & validate box to check it too
+npm run dev     # manually: pick the pill, fill the form, watch the YAML field update, and
+                # paste a matching file into that same field to check it syncs back correctly
 ```
 
 If you're changing converter behavior itself (not just editing a schema file's content), add a

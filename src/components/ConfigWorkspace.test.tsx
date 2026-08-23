@@ -3,6 +3,37 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ConfigWorkspace } from './ConfigWorkspace'
 import { getConfigDefinition } from '../configs'
 
+// CodeMirror's real DOM (contenteditable) isn't reliably driven by fireEvent.change under
+// jsdom - see YamlEditor.test.tsx, which covers the real component directly. Here we replace it
+// with a plain textarea sharing the exact same props contract, so these tests exercise
+// ConfigWorkspace's own bidirectional sync logic (the thing actually under test) without
+// depending on CodeMirror's internals. React.lazy/Suspense still applies to the mocked module,
+// so tests that need the field must await its first appearance.
+vi.mock('./YamlEditor', () => ({
+  default: ({
+    value,
+    onChange,
+    onFocus,
+    onBlur,
+    placeholder,
+  }: {
+    value: string
+    onChange: (value: string) => void
+    onFocus?: () => void
+    onBlur?: () => void
+    placeholder?: string
+  }) => (
+    <textarea
+      data-testid="yaml-field"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+    />
+  ),
+}))
+
 const tenantConfigDefinition = getConfigDefinition('tenant-config')
 
 const validYaml = [
@@ -23,12 +54,8 @@ function fillTargetFile({ owner = 'acme-co', repo = 'infra', path = 'config.yaml
   fireEvent.change(screen.getByPlaceholderText('path/to/file.yaml'), { target: { value: path } })
 }
 
-function outputYaml() {
-  return (document.querySelector('.yaml-output') as HTMLTextAreaElement).value
-}
-
-function pasteBox() {
-  return screen.getByPlaceholderText(`Paste the contents of ${tenantConfigDefinition.defaultFilename} here`)
+async function yamlField() {
+  return (await screen.findByTestId('yaml-field')) as HTMLTextAreaElement
 }
 
 beforeEach(() => {
@@ -40,7 +67,7 @@ afterEach(() => {
 })
 
 describe('ConfigWorkspace', () => {
-  it('fills in every field and reflects them in the Output YAML', () => {
+  it('fills in every field and reflects them live in the YAML field', async () => {
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
 
     fireEvent.change(screen.getByPlaceholderText('product name'), { target: { value: 'checkout' } })
@@ -48,49 +75,51 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'billing' } })
     fireEvent.change(screen.getByPlaceholderText('description'), { target: { value: 'Billing service' } })
 
-    expect(outputYaml()).toBe(validYaml)
+    expect(await yamlField()).toHaveValue(validYaml)
   })
 
-  it('shows validation errors in Output when required fields are still blank', () => {
+  it('shows validation errors and an empty field when required fields are still blank', async () => {
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
 
-    const outputSection = screen.getByRole('heading', { name: 'Output' }).closest('section')!
-    expect(within(outputSection).getByRole('list')).toBeInTheDocument()
-    expect(outputYaml()).toBe('')
+    const yamlSection = screen.getByRole('heading', { name: 'YAML' }).closest('section')!
+    expect(within(yamlSection).getByRole('list')).toBeInTheDocument()
+    expect(await yamlField()).toHaveValue('')
   })
 
-  it('Validate reports a valid config without touching the form fields', () => {
+  it('typing valid YAML directly into the field syncs it into the form', async () => {
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
 
-    fireEvent.change(pasteBox(), { target: { value: validYaml } })
-    fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+    fireEvent.change(await yamlField(), { target: { value: validYaml } })
 
-    expect(screen.getByText('Valid config.')).toBeInTheDocument()
-    // Untouched: the form's own product field is still blank.
+    expect(screen.getByText('✓ Valid — synced to form')).toBeInTheDocument()
+    expect((screen.getByPlaceholderText('product name') as HTMLInputElement).value).toBe('checkout')
+    // The field itself keeps showing what was typed - it isn't cleared once synced.
+    expect(await yamlField()).toHaveValue(validYaml)
+  })
+
+  it('typing invalid YAML shows errors and leaves the form untouched', async () => {
+    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+
+    fireEvent.change(await yamlField(), { target: { value: 'tenant: [unterminated' } })
+
+    expect(screen.getByText(/YAML syntax error/)).toBeInTheDocument()
     expect((screen.getByPlaceholderText('product name') as HTMLInputElement).value).toBe('')
   })
 
-  it('Validate reports errors for invalid YAML', () => {
+  it('does not overwrite the field mid-edit when the field is focused', async () => {
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
 
-    fireEvent.change(pasteBox(), { target: { value: 'tenant: [unterminated' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
+    const field = await yamlField()
+    fireEvent.focus(field)
+    fireEvent.change(field, { target: { value: 'tenant: [unterminated' } })
+    // A field-driven draft change happens elsewhere while the yaml field is focused - it must
+    // not clobber the invalid text the user is actively editing.
+    fireEvent.change(screen.getByPlaceholderText('product name'), { target: { value: 'checkout' } })
 
-    expect(screen.getByText(/YAML syntax error/)).toBeInTheDocument()
+    expect(field).toHaveValue('tenant: [unterminated')
   })
 
-  it('Load into form populates the fields and clears the paste box', () => {
-    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
-
-    fireEvent.change(pasteBox(), { target: { value: validYaml } })
-    fireEvent.click(screen.getByRole('button', { name: 'Load into form' }))
-
-    expect(screen.getByText('Loaded into the form.')).toBeInTheDocument()
-    expect((screen.getByPlaceholderText('product name') as HTMLInputElement).value).toBe('checkout')
-    expect((pasteBox() as HTMLTextAreaElement).value).toBe('')
-  })
-
-  it('Fetch from GitHub loads the file content into the paste box', async () => {
+  it('Fetch from GitHub loads the file content into the field and syncs the form', async () => {
     const content = btoa(String.fromCharCode(...new TextEncoder().encode(validYaml)))
     vi.stubGlobal(
       'fetch',
@@ -101,7 +130,8 @@ describe('ConfigWorkspace', () => {
     fillTargetFile()
     fireEvent.click(screen.getByRole('button', { name: 'Fetch from GitHub' }))
 
-    await waitFor(() => expect(pasteBox()).toHaveValue(validYaml))
+    await waitFor(async () => expect(await yamlField()).toHaveValue(validYaml))
+    expect((screen.getByPlaceholderText('product name') as HTMLInputElement).value).toBe('checkout')
   })
 
   it('Fetch from GitHub shows an error when the file cannot be fetched', async () => {
@@ -114,7 +144,7 @@ describe('ConfigWorkspace', () => {
     expect(await screen.findByText(/Couldn't fetch that file/)).toBeInTheDocument()
   })
 
-  it('Get GitHub link offers Create for a file that does not exist yet', async () => {
+  it('Push to GitHub offers Create for a file that does not exist yet', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) =>
@@ -129,12 +159,12 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'billing' } })
     fireEvent.change(screen.getByPlaceholderText('description'), { target: { value: 'Billing service' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Get GitHub link' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
     expect(await screen.findByRole('link', { name: 'Create file on GitHub' })).toBeInTheDocument()
   })
 
-  it('Get GitHub link offers Update for a file that already exists', async () => {
+  it('Push to GitHub offers Update for a file that already exists', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ status: 200 } as Response)))
 
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
@@ -144,7 +174,7 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'billing' } })
     fireEvent.change(screen.getByPlaceholderText('description'), { target: { value: 'Billing service' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Get GitHub link' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
     expect(await screen.findByRole('link', { name: 'Open file on GitHub to update' })).toBeInTheDocument()
   })
