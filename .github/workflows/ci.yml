@@ -251,11 +251,10 @@ jobs:
       # Plumber (MPL-2.0, FOSS) is a second, independent GitHub Actions security scanner -
       # a distinct engine/ruleset from zizmor, checking things it doesn't: exposed/unmasked
       # secrets, mutable remote-code execution nested inside third-party actions, known-CVE
-      # action versions, and branch protection. soft-fail: true for now - the first scan
-      # already found a real issue this repo hasn't fixed yet (see docs/supply-chain-security.md
-      # "Known, accepted Plumber finding") - flip to blocking (drop soft-fail) once that's closed.
-      # Self-contained: verifies its own binary against checksums.txt + a Sigstore/SLSA
-      # attestation before running, and handles its own SARIF/artifact upload internally.
+      # action versions, and branch protection. Blocking by default (min-points 100, any
+      # finding fails) - see docs/supply-chain-security.md "Known, accepted Plumber finding"
+      # for a real, currently-unfixed High finding (ISSUE-714) this exposes as a failing check
+      # until it's closed. Self-contained: verifies its own binary against checksums.txt + a
+      # Sigstore/SLSA attestation before running, and handles its own SARIF/artifact upload
+      # internally.
       - uses: getplumber/plumber@56369e7d43c4878049ee8ec6c2d600c21af45c4e # v0.4.40
-        with:
-          soft-fail: "true"

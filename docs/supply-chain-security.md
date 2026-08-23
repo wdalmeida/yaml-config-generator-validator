@@ -56,7 +56,7 @@ trusting a mutable tag/download blindly), and handles its own SARIF and artifact
 internally, so - unlike `zizmor`/`gitleaks` - it needs no hand-written second-run/upload steps
 in `ci.yml`.
 
-### Known, accepted Plumber finding (`ISSUE-714`)
+### Known Plumber finding blocking CI (`ISSUE-714`)
 
 Plumber's first scan against this repo found a real, unresolved issue at **High** severity
 (score 78/100, grade B): `anchore/sbom-action` (used in both `supply-chain.yml`'s `sbom` job and
@@ -68,14 +68,12 @@ pinning `anchore/sbom-action` to a commit SHA (as this repo does everywhere else
 this nested fetch - a compromise of `anchore/syft`'s `main` branch would be picked up on the
 next run regardless of the SBOM action's own pin.
 
-This is why the `plumber` job runs with `soft-fail: true` for now: report the score and findings
-(SARIF, JSON report, PBOM, CycloneDX SBOM - all uploaded as artifacts and to Security → Code
-scanning) without blocking CI over an issue that isn't fixed yet. Closing it properly means
-either pre-populating the GitHub Actions tool cache with a checksum-verified Syft binary before
-`anchore/sbom-action` runs (so its own `find()` call short-circuits the mutable-ref download), or
-replacing `anchore/sbom-action` with a manually-installed, checksum-verified Syft step - either
-is a deliberate follow-up change to `supply-chain.yml`/`release.yml`, not bundled into adding
-Plumber itself. Once closed, drop `soft-fail: true` so `plumber` gates like the rest of `ci.yml`.
+The `plumber` job gates at its default (min-points 100, any finding fails), so **this job fails
+on every push/PR until ISSUE-714 is closed** - it is not soft-failed or suppressed. Closing it
+means either pre-populating the GitHub Actions tool cache with a checksum-verified Syft binary
+before `anchore/sbom-action` runs (so its own `find()` call short-circuits the mutable-ref
+download), or replacing `anchore/sbom-action` with a manually-installed, checksum-verified Syft
+step in both `supply-chain.yml` and `release.yml`.
 
 ## The release artifact gets its own attestation
 
