@@ -34,19 +34,43 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Generate SBOM (CycloneDX, via Syft)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      # Syft is installed and run directly (not via anchore/sbom-action) because that action's
+      # own Syft download fetches https://raw.githubusercontent.com/anchore/syft/main/install.sh
+      # (a mutable ref, no checksum on the script itself) at runtime - a commit-SHA pin on the
+      # action itself doesn't cover this nested fetch (Plumber's ISSUE-714, confirmed by reading
+      # the action's bundled dist/index.cjs). Downloaded and checksum-verified in-job instead,
+      # same pattern as ci.yml's gitleaks install. See docs/supply-chain-security.md.
+      - name: Install Syft (checksum-verified, no anchore/sbom-action)
         env:
+          SYFT_VERSION: 1.42.3
+        run: |
+          set -euo pipefail
+          asset="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${asset}" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${asset}"
+          curl -fsSL -o "${tmp}/checksums.txt" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_checksums.txt"
+          ( cd "$tmp" && grep "$asset" checksums.txt | sha256sum -c - )
+          tar -xzf "${tmp}/${asset}" -C "$tmp" syft
+          chmod +x "${tmp}/syft"
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      # anchore/sbom-action just runs `syft scan dir:<path> -o <format>` and writes the
+      # captured stdout to output-file itself (confirmed by reading its bundled source) - so
+      # this is a direct equivalent, with the same SYFT_* env vars (native Syft config, read
+      # regardless of how the binary is invoked).
+      - name: Generate SBOM (CycloneDX, via Syft)
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
           SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES: "true"
           SYFT_EXCLUDE: "./node_modules/**/.github/**,./dist/**"
           SYFT_SELECT_CATALOGERS: "-go-module-binary-cataloger,-file-metadata-cataloger,-file-digest-cataloger"
+        run: syft scan dir:. -o cyclonedx-json > sbom.cdx.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          path: .
-          format: cyclonedx-json
-          output-file: sbom.cdx.json
-          artifact-name: sbom.cdx.json
-          upload-artifact: true
-          upload-artifact-retention: 90
+          name: sbom.cdx.json
+          path: sbom.cdx.json
+          retention-days: 90
 
       # Attestations bind the SBOM/build to this exact commit+workflow run via Sigstore
       # (keyless signing, no secrets to manage) and publish to the repo's Attestations tab.
