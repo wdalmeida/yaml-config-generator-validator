@@ -130,12 +130,51 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
             <FieldRow field={field} value={draft[field.key]} onChange={(value) => setField(field.key, value)} />
           </section>
         ))}
+      </div>
 
-        <section className="card">
-          <h2>Push to GitHub</h2>
-          <button type="button" disabled={!canPush || effectiveCheckState === 'checking'} onClick={handleCheck}>
-            {effectiveCheckState === 'checking' ? 'Checking...' : 'Get GitHub link'}
-          </button>
+      <div className="panel workspace-right">
+        <section className="yaml-panel">
+          <div className="yaml-panel-header">
+            <h2>YAML</h2>
+            <button type="button" disabled={!canFetch || fetching} onClick={handleFetchFromGithub}>
+              {fetching ? 'Fetching...' : 'Fetch from GitHub'}
+            </button>
+          </div>
+
+          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={yamlText} />}>
+            <YamlEditor
+              value={yamlText}
+              onChange={handleYamlTextChange}
+              onFocus={() => {
+                editorFocusedRef.current = true
+              }}
+              onBlur={() => {
+                editorFocusedRef.current = false
+              }}
+              placeholder={`Paste, edit, or fetch ${definition.defaultFilename} here`}
+            />
+          </Suspense>
+
+          <div className="yaml-status" aria-live="polite">
+            {fetchError && <p className="error">{fetchError}</p>}
+            {feedback.kind === 'valid' && <p className="success">✓ Valid — synced to form</p>}
+            {feedback.kind === 'invalid' && (
+              <ul className="errors">
+                {feedback.messages.map((message, i) => (
+                  <li key={i}>{message}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="yaml-panel-footer">
+            <button type="button" disabled={feedback.kind !== 'valid'} onClick={() => navigator.clipboard.writeText(yamlText)}>
+              Copy YAML
+            </button>
+            <button type="button" disabled={!canPush || effectiveCheckState === 'checking'} onClick={handleCheck}>
+              {effectiveCheckState === 'checking' ? 'Checking...' : 'Push to GitHub'}
+            </button>
+          </div>
 
           {effectiveCheckState === 'missing' && (
             <p className="github-hint">
@@ -181,47 +220,6 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
               </a>
             </p>
           )}
-        </section>
-      </div>
-
-      <div className="panel workspace-right">
-        <section className="yaml-panel">
-          <div className="yaml-panel-header">
-            <h2>YAML</h2>
-            <button type="button" disabled={!canFetch || fetching} onClick={handleFetchFromGithub}>
-              {fetching ? 'Fetching...' : 'Fetch from GitHub'}
-            </button>
-          </div>
-
-          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={yamlText} />}>
-            <YamlEditor
-              value={yamlText}
-              onChange={handleYamlTextChange}
-              onFocus={() => {
-                editorFocusedRef.current = true
-              }}
-              onBlur={() => {
-                editorFocusedRef.current = false
-              }}
-              placeholder={`Paste, edit, or fetch ${definition.defaultFilename} here`}
-            />
-          </Suspense>
-
-          <div className="yaml-status" aria-live="polite">
-            {fetchError && <p className="error">{fetchError}</p>}
-            {feedback.kind === 'valid' && <p className="success">✓ Valid — synced to form</p>}
-            {feedback.kind === 'invalid' && (
-              <ul className="errors">
-                {feedback.messages.map((message, i) => (
-                  <li key={i}>{message}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <button type="button" disabled={feedback.kind !== 'valid'} onClick={() => navigator.clipboard.writeText(yamlText)}>
-            Copy YAML
-          </button>
         </section>
       </div>
     </div>

@@ -144,7 +144,7 @@ describe('ConfigWorkspace', () => {
     expect(await screen.findByText(/Couldn't fetch that file/)).toBeInTheDocument()
   })
 
-  it('Get GitHub link offers Create for a file that does not exist yet', async () => {
+  it('Push to GitHub offers Create for a file that does not exist yet', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) =>
@@ -159,12 +159,12 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'billing' } })
     fireEvent.change(screen.getByPlaceholderText('description'), { target: { value: 'Billing service' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Get GitHub link' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
     expect(await screen.findByRole('link', { name: 'Create file on GitHub' })).toBeInTheDocument()
   })
 
-  it('Get GitHub link offers Update for a file that already exists', async () => {
+  it('Push to GitHub offers Update for a file that already exists', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ status: 200 } as Response)))
 
     render(<ConfigWorkspace definition={tenantConfigDefinition} />)
@@ -174,7 +174,7 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('name'), { target: { value: 'billing' } })
     fireEvent.change(screen.getByPlaceholderText('description'), { target: { value: 'Billing service' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Get GitHub link' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
     expect(await screen.findByRole('link', { name: 'Open file on GitHub to update' })).toBeInTheDocument()
   })
