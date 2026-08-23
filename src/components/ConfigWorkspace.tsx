@@ -125,6 +125,12 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
           </div>
         </section>
 
+        {definition.fields.map((field) => (
+          <section className="card-flat" key={field.key}>
+            <FieldRow field={field} value={draft[field.key]} onChange={(value) => setField(field.key, value)} />
+          </section>
+        ))}
+
         <section className="card">
           <h2>Push to GitHub</h2>
           <button type="button" disabled={!canPush || effectiveCheckState === 'checking'} onClick={handleCheck}>
@@ -179,12 +185,6 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
       </div>
 
       <div className="panel workspace-right">
-        {definition.fields.map((field) => (
-          <section className="card-flat" key={field.key}>
-            <FieldRow field={field} value={draft[field.key]} onChange={(value) => setField(field.key, value)} />
-          </section>
-        ))}
-
         <section className="yaml-panel">
           <div className="yaml-panel-header">
             <h2>YAML</h2>
@@ -193,7 +193,7 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
             </button>
           </div>
 
-          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={yamlText} rows={12} />}>
+          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={yamlText} />}>
             <YamlEditor
               value={yamlText}
               onChange={handleYamlTextChange}

@@ -26,7 +26,7 @@
   --space-8: 32px;
   --space-12: 48px;
 
-  max-width: 1040px;
+  max-width: 1220px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-4) var(--space-12);
   font-family: system-ui, sans-serif;
@@ -97,14 +97,22 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(240px, 280px) 1fr;
+  grid-template-columns: minmax(320px, 460px) 1fr;
   gap: var(--space-6);
   align-items: start;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  /* The YAML panel only stays pinned in place while there's a second column for the form to
+     scroll independently past it - on a single stacked column there's no "past" to stick
+     through, so it just sits in normal document flow like everything else. */
+  .yaml-panel {
+    position: static;
+    max-height: none;
   }
 }
 
@@ -127,21 +135,25 @@
 }
 
 /* Form field rows sit directly on the page rather than each getting their own bordered card -
-   the surrounding .card here is only a subtle grouping, not meant to compete visually. */
+   the surrounding .card here is only a subtle grouping, not meant to compete visually. Every
+   row gets a divider, including the last one, since Push to GitHub follows immediately after. */
 .card-flat {
   padding: var(--space-2) 0;
   border: none;
   border-radius: 0;
+  border-bottom: 1px solid var(--border);
   background: transparent;
 }
 
-.card-flat:not(:last-child) {
-  border-bottom: 1px solid var(--border);
-}
-
-/* The unified YAML field: the page's visual hero. Raised surface, soft shadow, larger radius
-   and padding than every other section - everything else stays flatter by comparison. */
+/* The unified YAML field: the page's visual hero, and pinned in view (sticky) so it never
+   scrolls out of sight while the form column - which can grow long - scrolls independently
+   past it. Raised surface, soft shadow, larger radius and padding than every other section. */
 .yaml-panel {
+  position: sticky;
+  top: var(--space-6);
+  max-height: calc(100vh - 2 * var(--space-6));
+  display: flex;
+  flex-direction: column;
   padding: var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -169,7 +181,8 @@
 }
 
 .yaml-editor-host {
-  min-height: 320px;
+  flex: 1;
+  min-height: 240px;
 }
 
 .yaml-editor-host .cm-editor {
@@ -177,14 +190,16 @@
 }
 
 .yaml-editor-fallback {
+  flex: 1;
   width: 100%;
-  min-height: 320px;
+  min-height: 240px;
   padding: var(--space-3);
   box-sizing: border-box;
   font-family: ui-monospace, monospace;
   font-size: 0.85rem;
   background: transparent;
   color: inherit;
+  resize: none;
 }
 
 .yaml-status {
