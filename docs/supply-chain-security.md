@@ -148,8 +148,8 @@ Two consequences baked into the workflow:
 - The image is exported twice - an OCI archive for skopeo to push, a Docker-format archive
   for the scanners, since neither Trivy's `--input` nor OSV-Scanner's `--archive` accepts an
   OCI archive tarball.
-- The OSV pass installs the CLI directly rather than using `google/osv-scanner-action` (which
-  the npm passes still use): the action has no image-scanning mode. Its gate reads the JSON
+- The OSV pass installs the CLI directly rather than using `google/osv-scanner-action`: the
+  action has no image-scanning mode (and the npm passes dropped it too - see below). Its gate reads the JSON
   output and blocks on fixable findings with CVSS >= 7.0 - the same bar Trivy's
   `--severity HIGH,CRITICAL --ignore-unfixed` gate uses - because OSV-Scanner has no severity
   or unfixed filter of its own, and a base image always carries some advisory nobody can act
@@ -185,6 +185,35 @@ and useful to anyone who wants to diff or scan it themselves. It just isn't what
 
 If you regenerate the SBOM locally, use the same flags (see below) or you'll see this noise
 return.
+
+## Why `osv-scan.yml` runs the CLI instead of `google/osv-scanner-action`
+
+The action runs the same binary, but inside a container image it pulls from GHCR on every
+job - measured at **17-18s per pass, twice per run**, against roughly 1s to download and
+checksum-verify the binary. It's also an anonymous registry pull, so it counts against a
+rate limit shared with every other runner on that IP, for no benefit over the release
+artifact this repo already knows how to verify.
+
+So `osv-scan.yml` installs the pinned, checksum-verified CLI the same way `ci.yml` installs
+gitleaks and `supply-chain.yml` installs Syft, and runs `osv-scanner scan source` with the
+caller's `scan-target` args unchanged. `--verbosity=error` is added on top: the findings go
+to the SARIF file either way, so the default level only adds a per-directory filesystem-walk
+trace to the log.
+
+## Caching
+
+Caching was added where measurement showed the time actually goes, not everywhere it could
+be. The two that earned it are both in `container.yml` (see [running as a
+container](container.md)): a GHCR-hosted **layer cache** for the image build, and the
+**Trivy vulnerability database** (~110 MB per cold run), keyed by day.
+
+Not cached, deliberately:
+
+- **Tool binaries** (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner) -
+  0-2s each to fetch, and each is verified against its published checksum at install time.
+  Restoring one from a cache skips exactly that verification to save about a second.
+- **npm** - already handled by `actions/setup-node`'s `cache: npm` in every job that runs
+  `npm ci`, which is why those steps take 4-5s rather than 30.
 
 ## Pinning: commit SHAs, not tags - not even major-version tags
 

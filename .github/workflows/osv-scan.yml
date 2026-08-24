@@ -44,17 +44,43 @@ jobs:
         with:
           name: sbom.cdx.json
 
+      # The CLI, not google/osv-scanner-action: that action runs the same binary inside a
+      # container image pulled from GHCR on every job, which measured 17-18s per pass (two
+      # passes per run) against ~1s to fetch and verify the binary here - and an anonymous
+      # registry pull counts against a rate limit shared with every other runner on that IP.
+      # Same install pattern as gitleaks/Syft/Trivy: exact version, checksum-verified.
+      - name: Install OSV-Scanner (checksum-verified)
+        env:
+          OSV_SCANNER_VERSION: 2.5.1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          base="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}"
+          curl -fsSL -o "${tmp}/osv-scanner" "${base}/osv-scanner_linux_amd64"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base}/osv-scanner_SHA256SUMS"
+          # The checksum file names the release asset; rename it to the local filename first
+          # so this stays a real check rather than a silently skipped one.
+          ( cd "$tmp" && grep 'osv-scanner_linux_amd64$' checksums.txt | sed 's|osv-scanner_linux_amd64|osv-scanner|' | sha256sum -c - )
+          chmod +x "${tmp}/osv-scanner"
+          echo "$tmp" >> "$GITHUB_PATH"
+
       - name: Scan for known vulnerabilities (OSV-Scanner)
         id: osv
         # No continue-on-error here: a real finding or scan error fails this job naturally, which
         # is what the caller's sca-result gate checks via needs.*.result. The if: always() upload
         # steps below still run regardless of this step's outcome.
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
-        with:
-          scan-args: |-
-            ${{ inputs.scan-target }}
-            --format=sarif
-            --output-file=osv-results-${{ inputs.result-name }}.sarif
+        env:
+          SCAN_TARGET: ${{ inputs.scan-target }}
+          RESULT_NAME: ${{ inputs.result-name }}
+        run: |
+          set -euo pipefail
+          # SCAN_TARGET is this workflow's own input (a literal in each caller), word-split
+          # deliberately: it carries several flags, and one pass passes three of them.
+          # shellcheck disable=SC2086
+          osv-scanner scan source $SCAN_TARGET \
+            --format=sarif \
+            --output-file="osv-results-${RESULT_NAME}.sarif" \
+            --verbosity=error
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

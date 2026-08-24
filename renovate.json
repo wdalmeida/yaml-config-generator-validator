@@ -84,7 +84,7 @@
     },
     {
       "customType": "regex",
-      "description": "OSV-Scanner, downloaded and checksum-verified directly from GitHub Releases in container.yml via an OSV_SCANNER_VERSION env var. The npm passes in supply-chain.yml still use google/osv-scanner-action (pinned by SHA, handled by the github-actions manager) - that action has no image-scanning mode, which is why the container pass runs the binary directly. Keep the two versions roughly in step so both passes query the same scanner generation.",
+      "description": "OSV-Scanner, downloaded and checksum-verified directly from GitHub Releases via an OSV_SCANNER_VERSION env var in both container.yml (image scanning, which google/osv-scanner-action has no mode for) and osv-scan.yml (where the action was dropped because its container image pull cost 17-18s per pass against ~1s for the binary) - matched in both files so a bump keeps them in sync.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
         "OSV_SCANNER_VERSION:\\s*(?<currentValue>[0-9.]+)"

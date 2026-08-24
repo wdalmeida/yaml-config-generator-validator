@@ -111,6 +111,30 @@ public repo — make it public under **Packages → Package settings** if it sho
 pullable anonymously. To stop publishing entirely, delete the `publish` job; the rest of
 the workflow keeps working as a pure check.
 
+## Caching
+
+Two caches, chosen by measuring where the workflow actually spent its time (build 18s,
+Trivy 6s, everything else 0-3s) rather than by caching whatever was cacheable:
+
+- **Layer cache in GHCR** (`ghcr.io/<owner>/<repo>/build-cache`), via buildah's
+  `--layers --cache-from/--cache-to`. Every run reads it; only a push to `main` writes it,
+  so a PR can't poison what other branches build against, and a fork PR that can't reach it
+  just builds every layer. The `npm ci` layer is the one that pays off — it's reused until
+  `package-lock.json` changes. It lives in the registry rather than `actions/cache` because
+  buildah reads and writes it in the registry's own format: no tarball to pack, upload and
+  unpack, and it's shared across branches instead of being scoped to one by GitHub's cache
+  isolation rules.
+- **Trivy's vulnerability database** (`~/.cache/trivy`), keyed by day. That's a ~110 MB
+  anonymous registry pull on every cold run — the largest download here, against a rate
+  limit shared with every other runner on the same IP. A cache hit doesn't mean scanning
+  against a stale database: Trivy still reads the DB's own metadata and re-downloads when it
+  considers it out of date. The daily key (rather than one entry per run) keeps this to one
+  entry a day instead of churning the repo's 10 GB cache quota.
+
+Deliberately not cached: the tool binaries themselves (hadolint, Trivy, Syft, OSV-Scanner).
+Each is 0-2s to fetch, and every one is verified against its published checksum at install
+time — restoring one from a cache would skip exactly that check to save a second.
+
 ## Why the scanners read the image, not the SBOM
 
 Both scans take the image itself. The SBOM is a published deliverable (attested alongside
