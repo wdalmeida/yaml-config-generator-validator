@@ -1,0 +1,347 @@
+name: Container
+
+# Builds the Containerfile image on every push/PR, proves it actually serves the app
+# safely, scans it with two independent vulnerability databases, and - only on push to
+# main - publishes it to GHCR with SLSA build provenance and an SBOM attestation.
+#
+# Nothing here gates the app itself: the site ships via GitHub Pages (deploy.yml). This
+# job exists so the container path can't silently rot. See docs/container.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  # Static lint of the Containerfile itself (hadolint, GPL-3.0/FOSS): missing USER,
+  # unpinned base tags, shell anti-patterns in RUN, non-numeric UIDs. Installed as a
+  # checksum-verified binary rather than via a wrapper action - same pattern as ci.yml's
+  # gitleaks and supply-chain.yml's Syft.
+  hadolint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install hadolint (checksum-verified)
+        env:
+          HADOLINT_VERSION: 2.15.1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          base="https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}"
+          curl -fsSL -o "${tmp}/hadolint" "${base}/hadolint-linux-x86_64"
+          curl -fsSL -o "${tmp}/checksums.sha256" "${base}/checksums.sha256"
+          # The published checksum file names the release asset; rename it to the local
+          # filename before verifying so this stays a real check, not a skipped one.
+          ( cd "$tmp" && grep 'hadolint-linux-x86_64$' checksums.sha256 | sed 's|hadolint-linux-x86_64|hadolint|' | sha256sum -c - )
+          chmod +x "${tmp}/hadolint"
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      - name: hadolint (SARIF, for code scanning)
+        id: hadolint
+        run: hadolint --format sarif Containerfile > hadolint-results.sarif
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: hadolint-results
+          path: hadolint-results.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
+        with:
+          sarif_file: hadolint-results.sarif
+          category: hadolint
+
+      - name: Fail if hadolint found issues
+        if: steps.hadolint.outcome == 'failure'
+        run: exit 1
+
+  # Builds with buildah (preinstalled on the runner, no action wrapper), then runs the
+  # image the same locked-down way docs/container.md tells people to run it and asserts
+  # it actually works: health endpoint, the real page, non-root UID, and the security
+  # headers container/nginx.conf sets. A regression in that config is a silently broken
+  # deployment otherwise - nothing else in this repo exercises it.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Layer timestamps and the created label both come from the commit date rather than
+      # wall-clock time, so two builds of the same commit don't differ purely because they
+      # ran at different moments. That's as far as this goes toward reproducibility - the
+      # npm install underneath isn't bit-for-bit guaranteed - but it makes an actual
+      # content difference between two builds of one commit visible instead of drowned in
+      # timestamp churn.
+      - name: Build image (buildah, OCI format, reproducible timestamps)
+        env:
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+        run: |
+          set -euo pipefail
+          epoch="$(git log -1 --format=%ct)"
+          buildah bud \
+            --format oci \
+            --timestamp "$epoch" \
+            --pull=always \
+            --build-arg IMAGE_CREATED="$(date -u -d "@${epoch}" +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg IMAGE_REVISION="$GITHUB_SHA" \
+            --build-arg IMAGE_VERSION="${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}" \
+            --tag "$IMAGE_REF" \
+            .
+
+      - name: Smoke test the running container
+        env:
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+        run: |
+          set -euo pipefail
+          # Dump the container's own log whichever way this ends - a failed assertion is
+          # usually explained by something nginx said at startup.
+          trap 'podman logs smoke || true; podman rm -f smoke >/dev/null 2>&1 || true' EXIT
+
+          podman run -d --name smoke -p 8080:8080 \
+            --read-only --tmpfs /tmp \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            "$IMAGE_REF"
+
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          echo "::group::Assertions"
+          curl -fsS http://localhost:8080/healthz | grep -qx ok
+          # The SPA itself, not just nginx's default page.
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          # Unknown paths fall back to index.html rather than 404ing.
+          curl -fsS http://localhost:8080/does-not-exist | grep -q '<div id="root">'
+
+          headers="$(curl -fsSI http://localhost:8080/)"
+          grep -qi '^content-security-policy:' <<<"$headers"
+          grep -qi '^x-content-type-options: nosniff' <<<"$headers"
+          grep -qi '^referrer-policy:' <<<"$headers"
+          # server_tokens off - no nginx version banner to fingerprint.
+          if grep -qiE '^server: nginx/' <<<"$headers"; then
+            echo "nginx version leaked in Server header" >&2
+            exit 1
+          fi
+
+          # Runs as the unprivileged nginx user, with a read-only root filesystem
+          # (the run above would have failed outright if it needed to write outside /tmp).
+          test "$(podman exec smoke id -u)" = "101"
+          echo "::endgroup::"
+
+      # Handed to the scan and publish jobs as an OCI archive so neither has to rebuild -
+      # they scan and push the exact bytes that were smoke-tested here.
+      - name: Export image as an OCI archive
+        env:
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+        run: podman save --format oci-archive -o image.tar "$IMAGE_REF"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: container-image
+          path: image.tar
+          retention-days: 7 # intermediate hand-off between jobs, not a published artifact
+
+      - name: Install Syft (checksum-verified, no anchore/sbom-action)
+        env:
+          SYFT_VERSION: 1.51.0
+        run: |
+          set -euo pipefail
+          asset="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${asset}" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/${asset}"
+          curl -fsSL -o "${tmp}/checksums.txt" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_checksums.txt"
+          ( cd "$tmp" && grep "$asset" checksums.txt | sha256sum -c - )
+          tar -xzf "${tmp}/${asset}" -C "$tmp" syft
+          chmod +x "${tmp}/syft"
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      # Scans the built image, so this covers the Alpine apk packages and the shipped
+      # dist/ files - not the npm tree supply-chain.yml's SBOM already describes.
+      - name: Generate SBOM of the image (CycloneDX, via Syft)
+        env:
+          SYFT_CHECK_FOR_APP_UPDATE: "false"
+        run: syft scan oci-archive:image.tar -o cyclonedx-json > sbom.cdx.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # Name fixed by osv-scan.yml's download-sbom-artifact input, which the sca job
+          # below reuses.
+          name: sbom.cdx.json
+          path: sbom.cdx.json
+          retention-days: 90
+
+  # Trivy (Apache-2.0, FOSS) against the built image: OS + language package CVEs, embedded
+  # secrets, and image misconfiguration. Deliberately a different database and engine from
+  # the OSV pass below - same "two independent passes" reasoning as supply-chain.yml's
+  # sca-sbom/sca-source split.
+  scan:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: container-image
+
+      - name: Install Trivy (checksum-verified)
+        env:
+          TRIVY_VERSION: 0.74.0
+        run: |
+          set -euo pipefail
+          asset="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tmp="$(mktemp -d)"
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base}/trivy_${TRIVY_VERSION}_checksums.txt"
+          ( cd "$tmp" && grep "$asset" checksums.txt | sha256sum -c - )
+          tar -xzf "${tmp}/${asset}" -C "$tmp" trivy
+          chmod +x "${tmp}/trivy"
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      # Two passes over the same cached database: the first reports everything it can see
+      # (SARIF, for code scanning), the second is the gate. Splitting them keeps low/medium
+      # findings visible without turning every unfixed advisory into a red build.
+      - name: Trivy (SARIF, for code scanning)
+        run: |
+          trivy image --input image.tar \
+            --scanners vuln,secret,misconfig \
+            --format sarif --output trivy-results.sarif
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Fail on fixable HIGH/CRITICAL findings
+        run: |
+          trivy image --input image.tar \
+            --scanners vuln,secret \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1
+
+  # Second, independent vulnerability pass over the image SBOM, through the same
+  # OSV-Scanner reusable workflow supply-chain.yml uses for the npm tree.
+  sca:
+    needs: build
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/osv-scan.yml
+    with:
+      download-sbom-artifact: true
+      scan-target: --lockfile=./sbom.cdx.json
+      result-name: container
+      category: osv-scanner-container
+
+  # Publishes to GHCR only from main, and only behind every check above. The image is
+  # pushed byte-for-byte from the archive the build job smoke-tested (skopeo copy, no
+  # rebuild), then attested: build provenance (SLSA - which workflow, which commit, which
+  # runner produced this digest) and the SBOM, both signed keyless through Sigstore and
+  # pushed alongside the image so `gh attestation verify` / `cosign verify-attestation`
+  # work against the registry copy.
+  publish:
+    needs: [hadolint, build, scan, sca]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: container-image
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom.cdx.json
+
+      - name: Push to GHCR
+        id: push
+        env:
+          # GITHUB_TOKEN's packages:write scope is enough here - no PAT, no long-lived
+          # registry credential stored in the repo.
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tag="sha-${GITHUB_SHA:0:7}"
+          # Written to the Docker config path, not skopeo's default
+          # $XDG_RUNTIME_DIR/containers/auth.json: the attest steps below push the
+          # attestation to the registry themselves and read Docker-format credentials.
+          # (The two formats are the same JSON - only the default location differs.)
+          mkdir -p "$HOME/.docker"
+          skopeo login ghcr.io \
+            --username "$REGISTRY_USER" --password-stdin \
+            --authfile "$HOME/.docker/config.json" <<<"$REGISTRY_TOKEN"
+          skopeo copy --digestfile digest.txt \
+            --authfile "$HOME/.docker/config.json" \
+            "oci-archive:image.tar" "docker://${image}:${tag}"
+          skopeo copy \
+            --authfile "$HOME/.docker/config.json" \
+            "docker://${image}:${tag}" "docker://${image}:latest"
+          {
+            echo "image=${image}"
+            echo "digest=$(cat digest.txt)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance (SLSA)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.cdx.json
+          push-to-registry: true
+
+      - name: Drop registry credentials
+        if: always()
+        run: rm -f "$HOME/.docker/config.json"

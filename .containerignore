@@ -1,0 +1,31 @@
+# Keeps the build context small and stops local state from leaking into a layer.
+# Read by buildah/podman; `docker build` only looks for .dockerignore, so a Docker
+# user needs to symlink one (see docs/container.md) - there is deliberately no
+# second checked-in copy to drift out of sync.
+
+.git
+.github
+node_modules
+dist
+dist-ssr
+coverage
+
+# Locally-generated scan output (see .gitignore)
+*.sarif
+sbom.cdx.json
+gitleaks
+gitleaks_*.tar.gz
+gitleaks_*_checksums.txt
+
+*.log
+*.local
+.env
+.env.*
+.DS_Store
+.idea
+.vscode
+
+Containerfile
+.containerignore
+docs
+*.md
