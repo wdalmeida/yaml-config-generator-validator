@@ -257,6 +257,65 @@ unpicked-up indefinitely. `renovate.json` explicitly enables it, on the same wee
 everything else, so the whole lockfile gets regenerated (within the existing `package.json`
 semver ranges - this doesn't change any version constraint) in its own single PR each run.
 
+## Automerge for zero-functional-risk updates
+
+This repo's branch protection ruleset (see `docs/releasing.md`) already requires passing status
+checks before merge but no human approval count (solo maintainer) - so for an update where there
+is nothing to actually review, requiring a manual click adds friction without adding safety.
+`renovate.json`'s `packageRules` turn on `automerge` for three cases, each layered onto the
+grouping rules above rather than replacing them:
+
+- **GitHub Action digest-only re-pins**: the pinned version (the `# vX.Y.Z` comment) doesn't
+  change - GitHub just moved the tag to a new commit - so there's no functional difference to
+  review, only a new hash to trust (which `sast`'s mutable-tag check and Plumber's known-CVE
+  action check would still catch if it mattered).
+- **The workflow tool-version group** (actionlint, gitleaks, zizmor, Syft): each is checksum- or
+  SHA-verified at install time inside the workflow itself regardless of what version Renovate
+  bumps it to, and `ci.yml`'s own `actionlint`/`gitleaks`/`zizmor` jobs (plus `supply-chain.yml`'s
+  `sbom` job for Syft) would fail outright if a bump broke something - the same tools are used to
+  validate their own updates.
+- **npm minor/patch bumps**: gated behind this repo's full `lint`/`build`/`test:coverage`/
+  `lint:schemas` suite, same as any other change. Majors are deliberately excluded from
+  automerge (and from the grouping rule) - a major bump (react 19→20, vite 8→9) is more likely to
+  need actual code changes, so it still gets its own PR for manual review.
+
+Automerge uses GitHub's own native auto-merge (`platformAutomerge`, Renovate's default) rather
+than Renovate polling and merging itself - it still waits for every required status check, and
+respects the same branch protection every other PR does. This needed the repo's **"Allow
+auto-merge" setting turned on** (`gh api repos/<owner>/<repo> -X PATCH -f allow_auto_merge=true`
+or Settings → General → Pull Requests) - it was off by default and this is the one repo-level
+setting change this file's history required outside of `renovate.json` itself.
+
+## Vulnerability alerts
+
+Two independent, complementary sources feed Renovate's remediation PRs here, matching this
+repo's existing pattern of never relying on a single scanner (`sca-sbom`/`sca-source`,
+`zizmor`/`plumber`, `codeql`/`sast`):
+
+- **GitHub's own Dependabot alerts** (Security → Dependabot alerts, backed by the GitHub
+  Advisory Database) - confirmed already enabled on this repo
+  (`gh api repos/<owner>/<repo>/vulnerability-alerts` returns `204`). Renovate's
+  `vulnerabilityAlerts` config is **on by default** (confirmed by reading
+  [`workers/repository/init/vulnerability.ts`](https://github.com/renovatebot/renovate/blob/main/lib/workers/repository/init/vulnerability.ts) -
+  it only skips this feature if explicitly set to `enabled: false`, which `renovate.json` never
+  does) - nothing needed to be added for this half, it was already active as soon as the
+  Renovate GitHub App was installed. It opens an immediate PR (bypassing both the weekly
+  schedule and the 7-day `minimumReleaseAge` cooldown - vulnerability fixes shouldn't wait a
+  week) with a `[SECURITY]` commit suffix.
+- **`osvVulnerabilityAlerts: true`** - the same [OSV.dev](https://osv.dev) database
+  `osv-scan.yml`'s two SCA passes already query, but as a second, independent source Renovate
+  itself cross-references before proposing an update. Marked `experimental` by Renovate itself
+  (tracked in [renovatebot/renovate#20542](https://github.com/renovatebot/renovate/issues/20542))
+  - worth knowing before relying on it as the only signal, which is also why the
+  GitHub-Advisory-backed default above is kept rather than treated as redundant.
+
+`configMigration: true` is also enabled: it has Renovate open a PR whenever a future Renovate
+release deprecates or renames a config key - exactly the class of problem manually fixed earlier
+in this file's history (`fileMatch` → `managerFilePatterns`, caught only because
+`renovate-config-validator --strict` was run locally before merging). Also marked `experimental`
+(Renovate's own docs note the migration PRs can still be noisy on whitespace/reordering), but
+directly prevents that exact papercut from recurring silently.
+
 ## Running these locally before pushing
 
 ```sh

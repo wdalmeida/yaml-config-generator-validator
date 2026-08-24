@@ -7,6 +7,8 @@
   "enabledManagers": ["github-actions", "custom.regex", "npm"],
   "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
+  "configMigration": true,
+  "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
     "description": "config:recommended does not enable this by default - without it, a transitive/indirect package-lock.json entry (not a direct package.json dependency) only ever gets refreshed as a side effect of some direct dependency's own bump, so a patched sub-dependency could sit unpicked-up indefinitely. This regenerates the whole lockfile within the existing semver ranges on the same weekly schedule as everything else, in its own single PR.",
     "enabled": true,
@@ -65,15 +67,23 @@
       "groupName": "github actions"
     },
     {
-      "description": "Batch the workflow-embedded tool version bumps (actionlint, gitleaks, zizmor, Syft) into their own single weekly PR, separate from the github actions group above.",
-      "matchManagers": ["custom.regex"],
-      "groupName": "workflow tool versions"
+      "description": "Automerge GitHub Action digest-only re-pins once CI passes: the pinned version comment doesn't change, GitHub just moved the tag to a new commit, so there's no functional difference to review. Requires the repo's 'Allow auto-merge' setting (on) - Renovate uses GitHub's native auto-merge, which still waits for every required status check.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "automerge": true
     },
     {
-      "description": "Batch every npm minor/patch bump into one weekly PR (react, vite, typescript, @codemirror/*, etc.) - same reasoning as the groups above. Majors are deliberately left ungrouped so each still gets its own PR: a major bump is more likely to need actual code changes here, and grouping one with unrelated minor/patch bumps would force reviewing/blocking on all of them together.",
+      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs plus supply-chain.yml's sbom job would fail outright if a bump broke anything.",
+      "matchManagers": ["custom.regex"],
+      "groupName": "workflow tool versions",
+      "automerge": true
+    },
+    {
+      "description": "Batch every npm minor/patch bump into one weekly PR (react, vite, typescript, @codemirror/*, etc.) and automerge once CI passes (full lint/build/test/schema suite). Majors are deliberately excluded from both grouping and automerge - each gets its own PR for manual review, since a major bump is more likely to need actual code changes.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "npm dependencies (minor/patch)"
+      "groupName": "npm dependencies (minor/patch)",
+      "automerge": true
     }
   ]
 }
