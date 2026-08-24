@@ -10,14 +10,15 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "actionlint: ci.yml pins the download-actionlint.bash script to a commit SHA of rhysd/actionlint itself, then passes the actionlint version to download as a separate argument - keep both in lockstep.",
+      "description": "actionlint: ci.yml pins the download-actionlint.bash script to a commit SHA of rhysd/actionlint itself, then passes the actionlint version to download as a separate argument - keep both in lockstep. rhysd/actionlint's git tags are v-prefixed (e.g. v1.7.13) but the bare currentValue captured here (1.7.12, no v - the download script rejects a v-prefixed argument) isn't, so extractVersionTemplate strips the v from every tag Renovate compares against; without it, the digest lookup can't find an exact tag match for the bumped bare version and fails with 'Could not determine new digest'.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
         "actionlint/(?<currentDigest>[0-9a-f]{40})/scripts/download-actionlint\\.bash\\)\\s+(?<currentValue>[0-9.]+)"
       ],
       "depNameTemplate": "rhysd/actionlint",
       "datasourceTemplate": "github-tags",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     },
     {
       "customType": "regex",
