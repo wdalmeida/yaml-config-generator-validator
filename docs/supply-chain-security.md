@@ -218,6 +218,22 @@ well-formed (it doesn't hit the network or GitHub's API), and it's worth also gr
 target workflow file for the literal version string to confirm it appears only where the regex
 expects.
 
+**A `v`-prefix mismatch broke the actionlint digest lookup in practice** (surfaced as a real
+Renovate Dependency Dashboard warning, `Could not determine new digest for update (github-tags
+package rhysd/actionlint)`, on the PR that introduced this manager): rhysd/actionlint's git tags
+are `v`-prefixed (`v1.7.12`), but `download-actionlint.bash` itself rejects a `v`-prefixed
+argument (`^[0-9]+\.[0-9]+\.[0-9]+$` only - confirmed by reading the pinned script), so the
+`currentValue` this regex captures from the file is deliberately bare (`1.7.12`, no `v`).
+Without telling Renovate about that mismatch, its `github-tags` datasource's digest lookup tries
+to find a tag matching the bare bumped value (`1.7.13`) via an *exact* string comparison against
+the raw tag list (`v1.7.10`, `v1.7.11`, ...) - confirmed by reading
+[`findCommitOfTag`](https://github.com/renovatebot/renovate/blob/main/lib/util/github/tags.ts) -
+`1.7.13` never equals `v1.7.13`, so the lookup always fails and no update is proposed at all.
+`extractVersionTemplate: "^v(?<version>.*)$"` fixes this by stripping the `v` from every tag
+*before* Renovate compares it against `currentValue`, so the comparison (and the digest, already
+fetched alongside each tag by this datasource - no second lookup needed once the bare versions
+line up) both work on the same bare format the file actually uses.
+
 ```sh
 npx --yes -p renovate renovate-config-validator --strict renovate.json
 ```
