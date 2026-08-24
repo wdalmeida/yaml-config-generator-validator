@@ -317,10 +317,14 @@ jobs:
       # Two runs over the same scan, mirroring the Trivy job above: SARIF reports everything
       # for code scanning, JSON drives the gate. A finding makes osv-scanner exit non-zero,
       # which is not itself a failure here - the gate below decides.
+      # --verbosity error: the findings go to the output file either way, so the only thing
+      # the default level adds to the log is a per-layer "Starting filesystem walk" trace.
+      # The gate step below prints the human-readable summary instead.
       - name: OSV-Scanner (SARIF, for code scanning)
         run: |
           osv-scanner scan image --archive image-docker.tar \
-            --format sarif --output-file osv-results-container.sarif || true
+            --format sarif --output-file osv-results-container.sarif \
+            --verbosity error || true
           test -s osv-results-container.sarif
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -345,7 +349,8 @@ jobs:
       - name: Fail on fixable HIGH/CRITICAL findings
         run: |
           osv-scanner scan image --archive image-docker.tar \
-            --format json --output-file osv-results-container.json || true
+            --format json --output-file osv-results-container.json \
+            --verbosity error || true
           python3 - <<'EOF'
           import json, sys
 
@@ -353,6 +358,7 @@ jobs:
               report = json.load(handle)
 
           blocking = []
+          reported = 0
           for result in report.get('results', []):
               for package in result.get('packages', []):
                   severity_by_id = {
@@ -362,6 +368,7 @@ jobs:
                       for vuln_id in group.get('ids', [])
                   }
                   for vuln in package.get('vulnerabilities', []):
+                      reported += 1
                       severity = severity_by_id.get(vuln['id'], 0.0)
                       fixed = any(
                           'fixed' in event
@@ -376,7 +383,7 @@ jobs:
 
           for finding in sorted(set(blocking)):
               print(finding)
-          print(f'{len(set(blocking))} fixable HIGH/CRITICAL finding(s)')
+          print(f'{reported} vulnerabilities reported, {len(set(blocking))} of them fixable HIGH/CRITICAL')
           sys.exit(1 if blocking else 0)
           EOF
 
