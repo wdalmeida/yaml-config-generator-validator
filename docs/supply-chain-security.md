@@ -150,37 +150,94 @@ happened (e.g. `tj-actions/changed-files` in 2025). Semgrep's `p/security-audit`
 mutable action tags as a blocking finding - that's how this was caught during setup here, and
 `sast` will catch it again if a future edit reintroduces a bare tag.
 
-**This doesn't mean manual upkeep forever**: `.github/dependabot.yml` understands the
-`@<sha> # vX.Y.Z` convention and opens a PR updating both the SHA and the comment together
-when a new version ships, for both `npm` and `github-actions` ecosystems.
+**This doesn't mean manual upkeep forever**: Renovate understands the `@<sha> # vX.Y.Z`
+convention and opens a PR updating both the SHA and the comment together when a new version
+ships (see "Dependabot only covers npm here - Renovate owns everything else" below for why
+Renovate, not Dependabot, is the one doing this).
 
-## Dependabot doesn't cover everything - hence `renovate.json`
+## Dependabot only covers npm here - Renovate owns everything else (`renovate.json`)
 
-`supply-chain.yml`'s `sast` job runs Semgrep inside a container pinned by **Docker digest**
-(`semgrep/semgrep@sha256:... # 1.173.0`), not a `uses:` step. Confirmed by reading
+Dependabot's `github-actions` ecosystem only walks `uses:`/`steps:` keys (confirmed by reading
 [dependabot-core's `github_actions/file_parser.rb`](https://github.com/dependabot/dependabot-core/blob/main/github_actions/lib/dependabot/github_actions/file_parser.rb)
-directly: it only walks `uses:`/`steps:` keys, and even there it explicitly skips `docker://`
-references (`# TODO: Support Docker references` - never implemented). A job's `container:`
-field is never inspected at all. So this digest has **no update path via Dependabot**,
-regardless of how it's referenced.
+directly) - it can't see a job's `container:`/`services:` field at all (it explicitly skips
+`docker://` refs too, `# TODO: Support Docker references` - never implemented), and has no
+concept of a tool version embedded in a `run:` shell script. This repo has both:
+`supply-chain.yml`'s `sast` job pins its container by **Docker digest**
+(`semgrep/semgrep@sha256:... # 1.173.0`), and `ci.yml`/`supply-chain.yml`/`release.yml` install
+several tools (actionlint, gitleaks, zizmor, Syft) by downloading a specific version directly in
+a `run:` step rather than via a `uses:` action - see "Pinning tool versions inside `run:`
+scripts" below.
 
-[Renovate](https://github.com/renovatebot/renovate) (AGPL-3.0) does support this - confirmed
-the same way, by reading its
-[`github-actions` manager source](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/github-actions/extract.ts):
-it explicitly extracts `job.container` (and `job.services`) as their own dependency types
-(`depType: 'container'` / `'service'`), separate from regular `uses:` action refs
-(`depType: 'action'`).
-
-`renovate.json` is scoped narrowly so the two bots don't overlap: `enabledManagers` restricts
-Renovate to the `github-actions` manager only (it never touches npm - Dependabot already does),
-and a `packageRules` entry disables the `action`/`github-runner`/`uses-with` dep types Dependabot
-already covers, leaving only `container`/`docker`/`service` (the Semgrep image digest today,
-and anything similar added later) active. Same 7-day `minimumReleaseAge` cooldown as
-Dependabot's, for the same reason.
+[Renovate](https://github.com/renovatebot/renovate) (AGPL-3.0) covers all of it, so it's the
+sole bot for `.github/workflows/*.yml`; `.github/dependabot.yml` is npm-only now, avoiding two
+bots opening competing PRs for the same action pin. `renovate.json`'s `enabledManagers` is
+`["github-actions", "custom.regex"]`: the built-in `github-actions` manager (confirmed by
+reading its
+[extractor source](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/github-actions/extract.ts))
+handles every regular `uses:` action pin plus `job.container`/`job.services` Docker digests as
+their own dep types, and `helpers:pinGitHubActionDigests` (in `extends`) is what converts a bare
+version tag to a pinned commit SHA the first time an action is added unpinned. `custom.regex` is
+Renovate's generic regex-based manager, used here for the tool versions no built-in manager
+understands. Everything shares the same 7-day `minimumReleaseAge` cooldown, same reasoning as
+Dependabot's.
 
 **Requires one manual step**: unlike Dependabot (built into GitHub, no setup), Renovate needs
 its [GitHub App](https://github.com/apps/renovate) installed on this repo/org - free for public
 repos. Nothing runs until that's done.
+
+## Pinning tool versions inside `run:` scripts
+
+actionlint, gitleaks, zizmor, and Syft aren't installed via a `uses:` action (see above for why,
+per-tool) - each is downloaded/installed at an exact version inside a `run:` step, which means
+neither Dependabot's nor Renovate's built-in `github-actions` manager can see them. `renovate.json`
+adds four `customManagers` (regex-based) to close this gap, one per tool:
+
+| Tool | Where | What's tracked | Datasource |
+|---|---|---|---|
+| actionlint | `ci.yml`'s `actionlint` job | Both the `rhysd/actionlint` commit SHA the `download-actionlint.bash` script URL is pinned to, and the version argument passed to it - one regex captures both (`currentDigest` and `currentValue`) from a single match, so they're always bumped together | `github-tags` |
+| gitleaks | `ci.yml`'s `gitleaks` job | The `GITLEAKS_VERSION` env var | `github-releases` |
+| zizmor | `ci.yml`'s `zizmor` job | The `pip install zizmor==1.29.0` version pin | `pypi` |
+| Syft | `supply-chain.yml`'s `sbom` job and `release.yml`'s `build-and-attach` job | The `SYFT_VERSION` env var, matched in both files so a bump keeps them in sync | `github-releases` |
+
+**Each version must appear exactly once per matched line, or a regex-manager bump only rewrites
+the one occurrence it matched and leaves the rest stale.** The gitleaks step originally spelled
+out `8.30.1` seven times across four `curl`/`grep`/`tar` lines with no env var (like Syft
+already had) - a regex matching only the first occurrence would have bumped that one copy and
+left the other six pointing at the old version, breaking the install on the very next run after
+the auto-generated PR merged. It was refactored to a `GITLEAKS_VERSION` env var, interpolated
+everywhere the version is needed, mirroring the Syft pattern - now there's exactly one literal
+copy for Renovate to match. The actionlint line had a smaller version of the same problem: the
+version appeared twice on one line (the download argument and a trailing `# script pinned to tag
+v1.7.12` comment) - the comment was reworded to stop repeating the number so only the live
+argument gets bumped.
+
+Each `customManagers` entry is scoped to `.github/workflows/*.yml` via `managerFilePatterns`, so
+these regexes never run against unrelated files. Validate this file locally before relying on it:
+`renovate-config-validator` checks the config parses and the regex/template fields are
+well-formed (it doesn't hit the network or GitHub's API), and it's worth also grepping the
+target workflow file for the literal version string to confirm it appears only where the regex
+expects.
+
+```sh
+npx --yes -p renovate renovate-config-validator --strict renovate.json
+```
+
+## Grouping and update pacing
+
+`renovate.json`'s `packageRules` groups updates into two PRs per run instead of one per
+dependency: `groupName: "github actions"` for every `uses:`/digest bump (including plain re-pins
+where GitHub moved a tag to a new commit but the version didn't change), and
+`groupName: "workflow tool versions"` for the four `customManagers` above. This repo already
+reviews and merges its weekly Renovate PRs together, so grouping cuts review overhead without
+losing anything - the trade-off is that a bad update inside a group blocks the whole group's PR
+rather than just one dependency's, which is an acceptable trade for a solo-maintained repo with
+few, low-risk actions.
+
+The `minimumReleaseAge: "7 days"` cooldown (config-level, applies to every manager here) and
+Renovate's own default `ignoreUnstable: true` (never propose a pre-release/RC version unless the
+currently-pinned version is itself a pre-release) were already in place before this change and
+didn't need to be added - both apply automatically to the new `custom.regex` managers too, same
+as the existing `github-actions` manager.
 
 ## Running these locally before pushing
 

@@ -11,13 +11,7 @@ updates:
     cooldown:
       default-days: 7
 
-  # Dependabot understands the `uses: owner/repo@<sha> # vX.Y.Z` pinning convention used
-  # throughout .github/workflows/ - it opens a PR updating both the SHA and the comment
-  # together, so pinning to a commit (rather than a floating tag) doesn't mean manual upkeep.
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    cooldown:
-      default-days: 7
+  # GitHub Actions themselves (uses: owner/repo@<sha> # vX.Y.Z pins) are managed by Renovate
+  # instead (see renovate.json) - it also covers Docker image digests and tool versions
+  # embedded in workflow run: scripts that this ecosystem can't see, so keeping actions here
+  # too would just mean two bots opening competing PRs for the same pin.
