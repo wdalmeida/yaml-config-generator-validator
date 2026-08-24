@@ -211,6 +211,16 @@ jobs:
         with:
           name: container-image
 
+      # Trivy's --input reads a Docker-format tar or an OCI *layout directory* - not an
+      # OCI archive tarball, which it rejects with "file manifest.json not found in tar".
+      # Unpacking the archive gives it exactly the layout it wants, with no re-export (and
+      # so still the same bytes the build job tested).
+      - name: Unpack the OCI archive into a layout directory
+        run: |
+          set -euo pipefail
+          mkdir -p image-oci
+          tar -xf image.tar -C image-oci
+
       - name: Install Trivy (checksum-verified)
         env:
           TRIVY_VERSION: 0.74.0
@@ -231,7 +241,7 @@ jobs:
       # findings visible without turning every unfixed advisory into a red build.
       - name: Trivy (SARIF, for code scanning)
         run: |
-          trivy image --input image.tar \
+          trivy image --input image-oci \
             --scanners vuln,secret,misconfig \
             --format sarif --output trivy-results.sarif
 
@@ -251,7 +261,7 @@ jobs:
 
       - name: Fail on fixable HIGH/CRITICAL findings
         run: |
-          trivy image --input image.tar \
+          trivy image --input image-oci \
             --scanners vuln,secret \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
