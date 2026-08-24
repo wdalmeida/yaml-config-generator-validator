@@ -20,8 +20,8 @@ pre-commit hook - see `CLAUDE.md`).
 
 `.github/workflows/container.yml` applies the same treatment to the OCI image built from
 `Containerfile` - hadolint on the file, a smoke test of the running container, Trivy and a
-second OSV-Scanner pass over the image, and (on `main`) a GHCR push with SLSA provenance and
-SBOM attestations. See [running as a container](container.md) for the job-by-job breakdown; the
+second OSV-Scanner pass over the image (**the image, not its SBOM** - see below), and (on
+`main`) a GHCR push with SLSA provenance and SBOM attestations. See [running as a container](container.md) for the job-by-job breakdown; the
 patterns below (checksum-verified tool installs, digest pinning, regex-managed versions) apply
 there identically.
 
@@ -114,6 +114,49 @@ run correctly first. Neither replaces the other - the SBOM pass is also what pro
 artifact that got attested (above) was the one scanned; the repository pass is what proves the
 scan doesn't depend on Syft. Both use the same OSV-Scanner action and OSV.dev database, so
 running both isn't duplicating a check, it's removing a single point of failure.
+
+## An image SBOM is a deliverable, not a scan input
+
+`supply-chain.yml` scans the npm SBOM and the repository independently, on the reasoning that
+a gap in one shouldn't hide a vulnerability. That reasoning does *not* carry over to the
+container image, where the SBOM-based pass turned out to be a false negative rather than a
+weaker second opinion - so `container.yml` scans the image with both engines instead.
+
+Same scanner, same database, only the input differing, measured on this repo's image:
+
+| OSV-Scanner input | Result on `nginx-unprivileged:1.29.8-alpine-slim` |
+|---|---|
+| CycloneDX SBOM (Syft) | 21 packages scanned, "No issues found" |
+| The image (`scan image --archive`) | 15 vulnerabilities, 1 critical / 8 high, on `openssl 3.5.6-r0` |
+
+apk installs *binary* subpackages (`libcrypto3`, `libssl3`); Alpine's advisories - and so
+OSV's - are keyed on the *source* package (`openssl`). The SBOM records that link only as a
+purl qualifier (`upstream=openssl`), which the SBOM code path doesn't follow, so every lookup
+is against a name no advisory uses:
+
+```text
+Alpine:v3.23  libcrypto3 3.5.6-r0  ->  0 vulns
+Alpine:v3.23  openssl    3.5.6-r0  ->  15 vulns
+```
+
+Reading the image, the scanner has apk's own metadata and resolves binary to source itself.
+This was caught in practice: on the PR that added `container.yml`, the SBOM pass reported
+clean on the exact image whose openssl CVE (CVE-2026-45447) failed the Trivy gate.
+
+Two consequences baked into the workflow:
+
+- The image is exported twice - an OCI archive for skopeo to push, a Docker-format archive
+  for the scanners, since neither Trivy's `--input` nor OSV-Scanner's `--archive` accepts an
+  OCI archive tarball.
+- The OSV pass installs the CLI directly rather than using `google/osv-scanner-action` (which
+  the npm passes still use): the action has no image-scanning mode. Its gate reads the JSON
+  output and blocks on fixable findings with CVSS >= 7.0 - the same bar Trivy's
+  `--severity HIGH,CRITICAL --ignore-unfixed` gate uses - because OSV-Scanner has no severity
+  or unfixed filter of its own, and a base image always carries some advisory nobody can act
+  on.
+
+The SBOM keeps its full value as an artifact: published, Sigstore-attested next to the image,
+and useful to anyone who wants to diff or scan it themselves. It just isn't what the gate reads.
 
 ## Why the SBOM excludes some things
 

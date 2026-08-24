@@ -81,6 +81,17 @@
       "depNameTemplate": "aquasecurity/trivy",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "OSV-Scanner, downloaded and checksum-verified directly from GitHub Releases in container.yml via an OSV_SCANNER_VERSION env var. The npm passes in supply-chain.yml still use google/osv-scanner-action (pinned by SHA, handled by the github-actions manager) - that action has no image-scanning mode, which is why the container pass runs the binary directly. Keep the two versions roughly in step so both passes query the same scanner generation.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "OSV_SCANNER_VERSION:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "google/osv-scanner",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -96,7 +107,7 @@
       "automerge": true
     },
     {
-      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan jobs would fail outright if a bump broke anything.",
+      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan/sca jobs would fail outright if a bump broke anything.",
       "matchManagers": ["custom.regex"],
       "groupName": "workflow tool versions",
       "automerge": true

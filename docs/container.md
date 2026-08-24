@@ -96,9 +96,9 @@ rot silently.
 | Job | Tool | License | What it does |
 |---|---|---|---|
 | `hadolint` | [hadolint](https://github.com/hadolint/hadolint) | GPL-3.0 | Lints the Containerfile itself: missing `USER`, unpinned bases, name-based UIDs, shell anti-patterns in `RUN`. SARIF → **Security → Code scanning** + artifact. |
-| `build` | buildah + podman (runner-preinstalled) | Apache-2.0 | Builds `--format oci` with commit-derived timestamps, then **runs** the image locked down exactly as documented above and asserts it works: `/healthz`, the real page, the SPA fallback, UID 101, and every security header `container/nginx.conf` sets (including no nginx version banner). Exports the tested image as an OCI archive for the jobs below, and generates a CycloneDX SBOM of it with Syft. |
+| `build` | buildah + podman (runner-preinstalled) | Apache-2.0 | Builds `--format oci` with commit-derived timestamps, then **runs** the image locked down exactly as documented above and asserts it works: `/healthz`, the real page, the SPA fallback, UID 101, and every security header `container/nginx.conf` sets (including no nginx version banner). Exports the tested image twice for the jobs below — an OCI archive for `publish` to push, a Docker-format archive for the scanners (neither reads an OCI archive tarball) — and generates a CycloneDX SBOM of it with Syft. |
 | `scan` | [Trivy](https://github.com/aquasecurity/trivy) | Apache-2.0 | Scans the built image for OS/language CVEs, embedded secrets and misconfiguration. Reports everything as SARIF; fails only on **fixable** HIGH/CRITICAL, so unfixed advisories stay visible without permanently reddening the build. |
-| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Second, independent vulnerability pass over the image SBOM, through the same `osv-scan.yml` reusable workflow the npm tree uses. Different database, different engine — same reasoning as the two SCA passes in [supply chain security](supply-chain-security.md). |
+| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Second, independent pass over the **image** against the OSV.dev database — different engine, different data source from Trivy. Held to the same bar as the Trivy gate (fixable, CVSS ≥ 7.0), read out of its JSON since it has no severity flag of its own. |
 | `publish` | skopeo + `actions/attest*` | Apache-2.0 | **`main` only**, and only if every job above passed: pushes the exact archive that was smoke-tested to `ghcr.io/wdalmeida/yaml-config-generator-validator` (no rebuild), then attaches SLSA build provenance and the SBOM as Sigstore-signed attestations, pushed to the registry alongside the image. |
 
 Every tool is installed as a checksum-verified binary release rather than through a
@@ -110,6 +110,47 @@ The image is published as a GHCR package on the repo. Packages start private eve
 public repo — make it public under **Packages → Package settings** if it should be
 pullable anonymously. To stop publishing entirely, delete the `publish` job; the rest of
 the workflow keeps working as a pure check.
+
+## Why the scanners read the image, not the SBOM
+
+Both scans take the image itself. The SBOM is a published deliverable (attested alongside
+the image), not the scan input — and that's deliberate.
+
+Measured on this repo's own image, same scanner, same database, changing only the input:
+
+| OSV-Scanner input | Result on `nginx-unprivileged:1.29.8-alpine-slim` |
+|---|---|
+| The CycloneDX SBOM | 21 packages scanned, **"No issues found"** |
+| The image (`scan image --archive`) | **15 vulnerabilities, 1 critical / 8 high** on `openssl 3.5.6-r0` |
+
+The reason is how apk packages are named. An SBOM lists the *binary* subpackages actually
+installed — `libcrypto3`, `libssl3` — recording `upstream=openssl` only as a purl qualifier.
+OSV's Alpine advisories are keyed on the *source* package:
+
+```text
+Alpine:v3.23  libcrypto3 3.5.6-r0  ->  0 vulns    # what the SBOM lists
+Alpine:v3.23  openssl    3.5.6-r0  ->  15 vulns   # what advisories are keyed on
+```
+
+Scanning the image, OSV-Scanner reads apk's own metadata and does the binary → source
+mapping itself (its output even names the binary packages, the introducing layer, and
+whether the package came from the base image). Fed the SBOM, it looks up `libcrypto3`, finds
+nothing, and reports a clean bill of health.
+
+This is not hypothetical here: the SBOM-based pass went green on the exact image whose
+openssl CVE failed the Trivy gate in the PR that added this workflow. A second opinion that
+can't see OS packages isn't defence in depth — it's a false negative with a green tick.
+
+Two knock-on effects worth knowing:
+
+- The SBOM is exactly as valuable as before **as an artifact** — a consumer can scan it, diff
+  it between releases, or feed it to their own tooling. It just isn't a substitute for
+  scanning the thing itself.
+- The SBOM path also emitted ~700 lines of `Neither CPE nor PURL found for package: {...}`
+  per run, one per file component Syft catalogs. Scanning the image emits none.
+
+`supply-chain.yml`'s npm passes are unaffected — a lockfile and an npm SBOM have no
+binary/source split, and one of those two passes reads the repository directly anyway.
 
 ## Pulling and verifying a published image
 
