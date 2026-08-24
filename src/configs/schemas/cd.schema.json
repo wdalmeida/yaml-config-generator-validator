@@ -27,5 +27,5 @@
       "x-placeholder": "#deploys"
     }
   },
-  "required": ["environment", "deployCommand", "requiresApproval", "notifyChannel"]
+  "required": ["environment", "deployCommand", "requiresApproval"]
 }

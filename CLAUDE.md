@@ -117,6 +117,6 @@ Tenant Config's constraints were specified by the user narrowly (tenant length, 
 
 - `tenant-config`: `tenant` required, ≤ 12 chars, either typed new or picked from the `enum` in the schema file; `product` required non-empty; `proxyEntries` list min 1, each matching a (possibly wildcard) domain pattern like `*.github.com`; `githubTopics` list min 1, each `{ method: 'artefact' | 'environment' | 'script', name, description }` (name/description required non-empty).
 - `ci`: `{ runtime: 'node'|'python'|'go'|'java', runtimeVersion, buildCommand, testCommand, triggerBranches: string[], registryDocker?, registryMaven? }` — placeholder, except the registry group (real, confirmed requirement): one shared registry-name input, Docker/Maven ticked independently, each computing its own value as `${name}-docker`/`${name}-maven` — the user cannot set either value directly.
-- `cd`: `{ environment: 'staging'|'production', deployCommand, requiresApproval: boolean, notifyChannel }` — placeholder.
+- `cd`: `{ environment: 'staging'|'production', deployCommand, requiresApproval: boolean, notifyChannel? }` — placeholder; `notifyChannel` is optional (tick-to-reveal `toggle-text` field) since not every deploy needs a notification channel.
 - `env`: `{ variables: { name, value, secret: boolean }[] }` — placeholder.
 - `protection`: `{ branch, requiredApprovingReviews: integer (1-6), requiredStatusChecks: string[], enforceAdmins: boolean }` — placeholder.
