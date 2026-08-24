@@ -34,7 +34,7 @@ COPY --chown=1000:1000 . .
 RUN npm run build
 
 
-FROM docker.io/nginxinc/nginx-unprivileged:1.30.4-alpine-slim@sha256:bcf91d2c73ab64fa1c4ac7fbac5ac523057c8af7d553ab9251c7aef38c260979 AS runtime
+FROM docker.io/nginxinc/nginx-unprivileged:1.31.3-alpine-slim@sha256:d61d7ef52430df468e74ed6ee6e914429b80e20ba988e3176278a73165f876cf AS runtime
 
 # Supplied by the build (see docs/container.md); left empty when building by hand.
 ARG IMAGE_CREATED=""
