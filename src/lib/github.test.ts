@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildCreateFileUrl, buildEditFileUrl, checkFileExists, fetchFileContent } from './github'
+import { buildCreateFileUrl, buildEditFileUrl, checkFileExists, fetchFileContent, inferRepoFromPagesUrl } from './github'
 
 const location = { owner: 'acme-co', repo: 'infra', branch: 'main', path: 'configs/tenant.yaml' }
 
@@ -105,5 +105,42 @@ describe('fetchFileContent', () => {
       vi.fn(() => Promise.reject(new Error('network down'))),
     )
     await expect(fetchFileContent(location)).resolves.toEqual({ success: false, reason: 'network' })
+  })
+})
+
+describe('inferRepoFromPagesUrl', () => {
+  it('reads owner and repo off a project pages URL', () => {
+    expect(inferRepoFromPagesUrl('https://acme.github.io/widget-service/')).toEqual({
+      owner: 'acme',
+      repo: 'widget-service',
+    })
+  })
+
+  it('ignores anything past the first path segment, plus query and hash', () => {
+    expect(inferRepoFromPagesUrl('https://acme.github.io/widget-service/index.html?a=1#top')).toEqual({
+      owner: 'acme',
+      repo: 'widget-service',
+    })
+  })
+
+  // A user/org pages site is served from the repo literally named "<owner>.github.io".
+  it('resolves a user/org pages root to the <owner>.github.io repo', () => {
+    expect(inferRepoFromPagesUrl('https://acme.github.io/')).toEqual({
+      owner: 'acme',
+      repo: 'acme.github.io',
+    })
+  })
+
+  // Everywhere else there is nothing to read: guessing would silently aim every push at
+  // whatever repo happened to match, so the user fills the fields in themselves.
+  it.each([
+    ['http://localhost:5173/', 'the dev server'],
+    ['http://localhost:8080/', 'the container image'],
+    ['https://configs.acme.com/', 'a custom domain'],
+    ['https://github.com/acme/widget-service', 'github.com itself'],
+    ['https://evil.github.io.example.com/', 'a lookalike host'],
+    ['not a url', 'an unparseable href'],
+  ])('returns null for %s (%s)', (href) => {
+    expect(inferRepoFromPagesUrl(href)).toBeNull()
   })
 })

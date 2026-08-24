@@ -91,3 +91,29 @@ export async function fetchFileContent({ owner, repo, branch, path }: RepoFileLo
     return { success: false, reason: 'network' }
   }
 }
+
+// Where this app itself is being served from, when that identifies a GitHub repository.
+//
+// A GitHub Pages site lives at https://<owner>.github.io/<repo>/ (project pages) or
+// https://<owner>.github.io/ (user/org pages, whose repo is literally named
+// "<owner>.github.io") - so the hosting repo is readable straight off the URL, and this app
+// is deployed into the very repo whose config files it edits. Anywhere else (localhost, the
+// container image, a custom domain) there's nothing to infer and this returns null rather
+// than guessing: a wrong owner/repo would silently point every push at someone else's repo.
+export function inferRepoFromPagesUrl(href: string): { owner: string; repo: string } | null {
+  let url: URL
+  try {
+    url = new URL(href)
+  } catch {
+    return null
+  }
+
+  const host = url.hostname.toLowerCase()
+  if (!host.endsWith('.github.io')) return null
+
+  const owner = host.slice(0, -'.github.io'.length)
+  if (!owner || owner.includes('.')) return null
+
+  const [firstSegment] = url.pathname.split('/').filter(Boolean)
+  return { owner, repo: firstSegment ?? host }
+}
