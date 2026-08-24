@@ -4,9 +4,14 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "enabledManagers": ["github-actions", "custom.regex"],
+  "enabledManagers": ["github-actions", "custom.regex", "npm"],
   "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
+  "lockFileMaintenance": {
+    "description": "config:recommended does not enable this by default - without it, a transitive/indirect package-lock.json entry (not a direct package.json dependency) only ever gets refreshed as a side effect of some direct dependency's own bump, so a patched sub-dependency could sit unpicked-up indefinitely. This regenerates the whole lockfile within the existing semver ranges on the same weekly schedule as everything else, in its own single PR.",
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -63,6 +68,12 @@
       "description": "Batch the workflow-embedded tool version bumps (actionlint, gitleaks, zizmor, Syft) into their own single weekly PR, separate from the github actions group above.",
       "matchManagers": ["custom.regex"],
       "groupName": "workflow tool versions"
+    },
+    {
+      "description": "Batch every npm minor/patch bump into one weekly PR (react, vite, typescript, @codemirror/*, etc.) - same reasoning as the groups above. Majors are deliberately left ungrouped so each still gets its own PR: a major bump is more likely to need actual code changes here, and grouping one with unrelated minor/patch bumps would force reviewing/blocking on all of them together.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm dependencies (minor/patch)"
     }
   ]
 }
