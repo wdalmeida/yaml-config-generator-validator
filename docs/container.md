@@ -123,7 +123,11 @@ Trivy 6s, everything else 0-3s) rather than by caching whatever was cacheable:
   `package-lock.json` changes. It lives in the registry rather than `actions/cache` because
   buildah reads and writes it in the registry's own format: no tarball to pack, upload and
   unpack, and it's shared across branches instead of being scoped to one by GitHub's cache
-  isolation rules.
+  isolation rules. Verified against a throwaway local registry, with the machine's own layer
+  store cleared between runs so only the registry cache was available: **23.4s cold, 13.9s
+  warm**, with `npm ci` reused and `COPY . .`/`npm run build` correctly rebuilt because a
+  source file had changed - the resulting image contained the new content, so the reuse is
+  real rather than stale.
 - **Trivy's vulnerability database** (`~/.cache/trivy`), keyed by day. That's a ~110 MB
   anonymous registry pull on every cold run — the largest download here, against a rate
   limit shared with every other runner on the same IP. A cache hit doesn't mean scanning
