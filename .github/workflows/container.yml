@@ -152,17 +152,25 @@ jobs:
           test "$(podman exec smoke id -u)" = "101"
           echo "::endgroup::"
 
-      # Handed to the scan and publish jobs as an OCI archive so neither has to rebuild -
-      # they scan and push the exact bytes that were smoke-tested here.
-      - name: Export image as an OCI archive
+      # Handed to the scan and publish jobs so neither has to rebuild - they scan and push
+      # the exact bytes that were smoke-tested here. Two formats of one image: skopeo pushes
+      # the OCI archive (native mediatypes, no conversion), while both scanners read a
+      # Docker-format archive - neither Trivy's nor OSV-Scanner's --input/--archive accepts
+      # an OCI archive tarball ("file manifest.json not found in tar").
+      - name: Export the image (OCI archive to push, Docker archive to scan)
         env:
           IMAGE_REF: localhost/yaml-config-generator-validator:ci
-        run: podman save --format oci-archive -o image.tar "$IMAGE_REF"
+        run: |
+          set -euo pipefail
+          podman save --format oci-archive -o image.tar "$IMAGE_REF"
+          podman save --format docker-archive -o image-docker.tar "$IMAGE_REF"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-image
-          path: image.tar
+          path: |
+            image.tar
+            image-docker.tar
           retention-days: 7 # intermediate hand-off between jobs, not a published artifact
 
       - name: Install Syft (checksum-verified, no anchore/sbom-action)
@@ -179,8 +187,12 @@ jobs:
           chmod +x "${tmp}/syft"
           echo "$tmp" >> "$GITHUB_PATH"
 
-      # Scans the built image, so this covers the Alpine apk packages and the shipped
-      # dist/ files - not the npm tree supply-chain.yml's SBOM already describes.
+      # Describes the built image - the Alpine apk packages and the shipped dist/ files,
+      # not the npm tree supply-chain.yml's SBOM already covers. This is a deliverable
+      # (published, and attested in the publish job), deliberately NOT the input to either
+      # scan below: an SBOM lists apk *binary* packages (libcrypto3, libssl3) while the
+      # advisories are keyed on the *source* package (openssl), and that mapping only
+      # survives when a scanner reads the image's own apk metadata. See docs/container.md.
       - name: Generate SBOM of the image (CycloneDX, via Syft)
         env:
           SYFT_CHECK_FOR_APP_UPDATE: "false"
@@ -211,16 +223,6 @@ jobs:
         with:
           name: container-image
 
-      # Trivy's --input reads a Docker-format tar or an OCI *layout directory* - not an
-      # OCI archive tarball, which it rejects with "file manifest.json not found in tar".
-      # Unpacking the archive gives it exactly the layout it wants, with no re-export (and
-      # so still the same bytes the build job tested).
-      - name: Unpack the OCI archive into a layout directory
-        run: |
-          set -euo pipefail
-          mkdir -p image-oci
-          tar -xf image.tar -C image-oci
-
       - name: Install Trivy (checksum-verified)
         env:
           TRIVY_VERSION: 0.74.0
@@ -241,7 +243,7 @@ jobs:
       # findings visible without turning every unfixed advisory into a red build.
       - name: Trivy (SARIF, for code scanning)
         run: |
-          trivy image --input image-oci \
+          trivy image --input image-docker.tar \
             --scanners vuln,secret,misconfig \
             --format sarif --output trivy-results.sarif
 
@@ -261,26 +263,122 @@ jobs:
 
       - name: Fail on fixable HIGH/CRITICAL findings
         run: |
-          trivy image --input image-oci \
+          trivy image --input image-docker.tar \
             --scanners vuln,secret \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --exit-code 1
 
-  # Second, independent vulnerability pass over the image SBOM, through the same
-  # OSV-Scanner reusable workflow supply-chain.yml uses for the npm tree.
+  # Second, independent vulnerability pass: OSV-Scanner against the OSV.dev database, a
+  # different engine and a different data source from Trivy above.
+  #
+  # It scans the IMAGE, not the SBOM - unlike supply-chain.yml's npm passes, which do use
+  # the SBOM (and are unaffected by this). Feeding it the image SBOM is a silent false
+  # negative for OS packages: the SBOM lists apk binary subpackages (libcrypto3, libssl3)
+  # carrying "upstream=openssl" only as a purl qualifier, while OSV's Alpine advisories are
+  # keyed on the source package (openssl) - so the lookup misses. Measured on this repo's
+  # own image, same scanner and same database, only the input differing: SBOM input -> "no
+  # issues found"; image input -> 15 vulnerabilities (1 critical, 8 high) on openssl
+  # 3.5.6-r0, the exact CVE Trivy failed the build on. Scanning the image lets OSV-Scanner
+  # read apk's own metadata and do the binary -> source mapping itself. It also drops ~700
+  # lines of "Neither CPE nor PURL found for package" noise the SBOM path emits for every
+  # file component Syft catalogs.
   sca:
     needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
       actions: read
-    uses: ./.github/workflows/osv-scan.yml
-    with:
-      download-sbom-artifact: true
-      scan-target: --lockfile=./sbom.cdx.json
-      result-name: container
-      category: osv-scanner-container
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: container-image
+
+      # Installed directly rather than via google/osv-scanner-action (which the npm passes
+      # still use): the action has no image-scanning mode, and a checksum-verified binary is
+      # this workflow's pattern for every other tool anyway.
+      - name: Install OSV-Scanner (checksum-verified)
+        env:
+          OSV_SCANNER_VERSION: 2.5.1
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          base="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}"
+          curl -fsSL -o "${tmp}/osv-scanner" "${base}/osv-scanner_linux_amd64"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base}/osv-scanner_SHA256SUMS"
+          # The checksum file names the release asset; rename it to the local filename first
+          # so this stays a real check rather than a silently skipped one.
+          ( cd "$tmp" && grep 'osv-scanner_linux_amd64$' checksums.txt | sed 's|osv-scanner_linux_amd64|osv-scanner|' | sha256sum -c - )
+          chmod +x "${tmp}/osv-scanner"
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      # Two runs over the same scan, mirroring the Trivy job above: SARIF reports everything
+      # for code scanning, JSON drives the gate. A finding makes osv-scanner exit non-zero,
+      # which is not itself a failure here - the gate below decides.
+      - name: OSV-Scanner (SARIF, for code scanning)
+        run: |
+          osv-scanner scan image --archive image-docker.tar \
+            --format sarif --output-file osv-results-container.sarif || true
+          test -s osv-results-container.sarif
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: osv-scan-results-container
+          path: osv-results-container.sarif
+          retention-days: 90
+
+      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        if: always()
+        continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
+        with:
+          sarif_file: osv-results-container.sarif
+          category: osv-scanner-container
+
+      # Held to exactly the bar Trivy's gate uses - fixable, HIGH or CRITICAL (CVSS >= 7.0)
+      # - so the two engines fail the build for the same class of finding rather than one of
+      # them reddening it over an advisory nobody can act on. OSV-Scanner has no severity or
+      # --ignore-unfixed flag of its own, hence reading its JSON: a vulnerability counts only
+      # if its group's max_severity is >= 7.0 and its affected ranges carry a "fixed" event.
+      - name: Fail on fixable HIGH/CRITICAL findings
+        run: |
+          osv-scanner scan image --archive image-docker.tar \
+            --format json --output-file osv-results-container.json || true
+          python3 - <<'EOF'
+          import json, sys
+
+          with open('osv-results-container.json') as handle:
+              report = json.load(handle)
+
+          blocking = []
+          for result in report.get('results', []):
+              for package in result.get('packages', []):
+                  severity_by_id = {
+                      vuln_id: float(group['max_severity'])
+                      for group in package.get('groups', [])
+                      if group.get('max_severity')
+                      for vuln_id in group.get('ids', [])
+                  }
+                  for vuln in package.get('vulnerabilities', []):
+                      severity = severity_by_id.get(vuln['id'], 0.0)
+                      fixed = any(
+                          'fixed' in event
+                          for affected in vuln.get('affected', [])
+                          for range_ in affected.get('ranges', [])
+                          for event in range_.get('events', [])
+                      )
+                      if severity >= 7.0 and fixed:
+                          name = package['package']['name']
+                          version = package['package']['version']
+                          blocking.append(f"{vuln['id']} {name} {version} (CVSS {severity})")
+
+          for finding in sorted(set(blocking)):
+              print(finding)
+          print(f'{len(set(blocking))} fixable HIGH/CRITICAL finding(s)')
+          sys.exit(1 if blocking else 0)
+          EOF
 
   # Publishes to GHCR only from main, and only behind every check above. The image is
   # pushed byte-for-byte from the archive the build job smoke-tested (skopeo copy, no
