@@ -10,6 +10,10 @@
 
 FROM docker.io/library/node:24.16.0-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a AS build
 
+# WORKDIR alone creates /app owned by root, and buildah - unlike podman/docker's builder -
+# doesn't hand it to the USER declared further down, so `npm ci` fails with EACCES on
+# /app/node_modules. Creating and chowning it explicitly works the same way everywhere.
+RUN mkdir -p /app && chown 1000:1000 /app
 WORKDIR /app
 
 # Manifest + lockfile first, so the install layer is only invalidated by a dependency
