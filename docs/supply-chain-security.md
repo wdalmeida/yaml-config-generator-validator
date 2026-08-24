@@ -152,12 +152,17 @@ mutable action tags as a blocking finding - that's how this was caught during se
 
 **This doesn't mean manual upkeep forever**: Renovate understands the `@<sha> # vX.Y.Z`
 convention and opens a PR updating both the SHA and the comment together when a new version
-ships (see "Dependabot only covers npm here - Renovate owns everything else" below for why
-Renovate, not Dependabot, is the one doing this).
+ships (see "Renovate is the only dependency-update bot here" below for why).
 
-## Dependabot only covers npm here - Renovate owns everything else (`renovate.json`)
+## Renovate is the only dependency-update bot here (`renovate.json`)
 
-Dependabot's `github-actions` ecosystem only walks `uses:`/`steps:` keys (confirmed by reading
+This repo used to run both Dependabot (npm) and Renovate (everything Dependabot's
+`github-actions` ecosystem can't reach - see below), but that's needless: Renovate alone can
+cover every dependency type here, so `.github/dependabot.yml` was removed and Renovate took over
+npm too, rather than running two bots that would each only manage part of the repo.
+
+Why Renovate, and not the other way around: Dependabot's `github-actions` ecosystem only walks
+`uses:`/`steps:` keys (confirmed by reading
 [dependabot-core's `github_actions/file_parser.rb`](https://github.com/dependabot/dependabot-core/blob/main/github_actions/lib/dependabot/github_actions/file_parser.rb)
 directly) - it can't see a job's `container:`/`services:` field at all (it explicitly skips
 `docker://` refs too, `# TODO: Support Docker references` - never implemented), and has no
@@ -166,20 +171,20 @@ concept of a tool version embedded in a `run:` shell script. This repo has both:
 (`semgrep/semgrep@sha256:... # 1.173.0`), and `ci.yml`/`supply-chain.yml`/`release.yml` install
 several tools (actionlint, gitleaks, zizmor, Syft) by downloading a specific version directly in
 a `run:` step rather than via a `uses:` action - see "Pinning tool versions inside `run:`
-scripts" below.
+scripts" below. Only Renovate can reach those, and once it's configured for GitHub Actions
+there's no reason to also keep Dependabot around just for npm.
 
-[Renovate](https://github.com/renovatebot/renovate) (AGPL-3.0) covers all of it, so it's the
-sole bot for `.github/workflows/*.yml`; `.github/dependabot.yml` is npm-only now, avoiding two
-bots opening competing PRs for the same action pin. `renovate.json`'s `enabledManagers` is
-`["github-actions", "custom.regex"]`: the built-in `github-actions` manager (confirmed by
-reading its
+`renovate.json`'s `enabledManagers` is `["github-actions", "custom.regex", "npm"]`: the built-in
+`github-actions` manager (confirmed by reading its
 [extractor source](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/github-actions/extract.ts))
 handles every regular `uses:` action pin plus `job.container`/`job.services` Docker digests as
 their own dep types, and `helpers:pinGitHubActionDigests` (in `extends`) is what converts a bare
 version tag to a pinned commit SHA the first time an action is added unpinned. `custom.regex` is
 Renovate's generic regex-based manager, used here for the tool versions no built-in manager
-understands. Everything shares the same 7-day `minimumReleaseAge` cooldown, same reasoning as
-Dependabot's.
+understands (see below). `npm` is Renovate's own built-in npm manager - functionally equivalent
+to Dependabot's for this repo's purposes: it manages `package.json` and `package-lock.json`
+together (react, vite, typescript, everything in `dependencies`/`devDependencies`), same as
+Dependabot did. Everything shares the same 7-day `minimumReleaseAge` cooldown.
 
 **Requires one manual step**: unlike Dependabot (built into GitHub, no setup), Renovate needs
 its [GitHub App](https://github.com/apps/renovate) installed on this repo/org - free for public
@@ -240,20 +245,92 @@ npx --yes -p renovate renovate-config-validator --strict renovate.json
 
 ## Grouping and update pacing
 
-`renovate.json`'s `packageRules` groups updates into two PRs per run instead of one per
+`renovate.json`'s `packageRules` groups updates into up to three PRs per run instead of one per
 dependency: `groupName: "github actions"` for every `uses:`/digest bump (including plain re-pins
-where GitHub moved a tag to a new commit but the version didn't change), and
-`groupName: "workflow tool versions"` for the four `customManagers` above. This repo already
-reviews and merges its weekly Renovate PRs together, so grouping cuts review overhead without
-losing anything - the trade-off is that a bad update inside a group blocks the whole group's PR
-rather than just one dependency's, which is an acceptable trade for a solo-maintained repo with
-few, low-risk actions.
+where GitHub moved a tag to a new commit but the version didn't change), `groupName: "workflow
+tool versions"` for the four `customManagers` above, and `groupName: "npm dependencies
+(minor/patch)"` for every npm minor/patch bump. npm **majors** are deliberately left out of that
+last group - each still gets its own PR, since a major bump (react 19→20, vite 8→9) is more
+likely to need actual code changes here, and bundling one with unrelated minor/patch bumps would
+force reviewing/blocking on all of them together. This repo already reviews and merges its
+weekly Renovate PRs together, so grouping cuts review overhead without losing anything - the
+trade-off is that a bad update inside a group blocks the whole group's PR rather than just one
+dependency's, which is an acceptable trade here given the narrow, low-risk scope of each group.
 
 The `minimumReleaseAge: "7 days"` cooldown (config-level, applies to every manager here) and
 Renovate's own default `ignoreUnstable: true` (never propose a pre-release/RC version unless the
-currently-pinned version is itself a pre-release) were already in place before this change and
-didn't need to be added - both apply automatically to the new `custom.regex` managers too, same
-as the existing `github-actions` manager.
+currently-pinned version is itself a pre-release) apply automatically to every manager,
+including `npm` and `custom.regex` - no extra config needed for either.
+
+## Lock file maintenance
+
+`config:recommended` does **not** enable `lockFileMaintenance` by default (confirmed by reading
+the preset source - it's off unless a config explicitly turns it on). Without it, an entry in
+`package-lock.json` for a package that isn't a direct `package.json` dependency (a transitive/
+sub-dependency) only ever gets refreshed as a side effect of some direct dependency's own
+version bump - a patched sub-dependency with no corresponding direct-dependency bump could sit
+unpicked-up indefinitely. `renovate.json` explicitly enables it, on the same weekly schedule as
+everything else, so the whole lockfile gets regenerated (within the existing `package.json`
+semver ranges - this doesn't change any version constraint) in its own single PR each run.
+
+## Automerge for zero-functional-risk updates
+
+This repo's branch protection ruleset (see `docs/releasing.md`) already requires passing status
+checks before merge but no human approval count (solo maintainer) - so for an update where there
+is nothing to actually review, requiring a manual click adds friction without adding safety.
+`renovate.json`'s `packageRules` turn on `automerge` for three cases, each layered onto the
+grouping rules above rather than replacing them:
+
+- **GitHub Action digest-only re-pins**: the pinned version (the `# vX.Y.Z` comment) doesn't
+  change - GitHub just moved the tag to a new commit - so there's no functional difference to
+  review, only a new hash to trust (which `sast`'s mutable-tag check and Plumber's known-CVE
+  action check would still catch if it mattered).
+- **The workflow tool-version group** (actionlint, gitleaks, zizmor, Syft): each is checksum- or
+  SHA-verified at install time inside the workflow itself regardless of what version Renovate
+  bumps it to, and `ci.yml`'s own `actionlint`/`gitleaks`/`zizmor` jobs (plus `supply-chain.yml`'s
+  `sbom` job for Syft) would fail outright if a bump broke something - the same tools are used to
+  validate their own updates.
+- **npm minor/patch bumps**: gated behind this repo's full `lint`/`build`/`test:coverage`/
+  `lint:schemas` suite, same as any other change. Majors are deliberately excluded from
+  automerge (and from the grouping rule) - a major bump (react 19→20, vite 8→9) is more likely to
+  need actual code changes, so it still gets its own PR for manual review.
+
+Automerge uses GitHub's own native auto-merge (`platformAutomerge`, Renovate's default) rather
+than Renovate polling and merging itself - it still waits for every required status check, and
+respects the same branch protection every other PR does. This needed the repo's **"Allow
+auto-merge" setting turned on** (`gh api repos/<owner>/<repo> -X PATCH -f allow_auto_merge=true`
+or Settings → General → Pull Requests) - it was off by default and this is the one repo-level
+setting change this file's history required outside of `renovate.json` itself.
+
+## Vulnerability alerts
+
+Two independent, complementary sources feed Renovate's remediation PRs here, matching this
+repo's existing pattern of never relying on a single scanner (`sca-sbom`/`sca-source`,
+`zizmor`/`plumber`, `codeql`/`sast`):
+
+- **GitHub's own Dependabot alerts** (Security → Dependabot alerts, backed by the GitHub
+  Advisory Database) - confirmed already enabled on this repo
+  (`gh api repos/<owner>/<repo>/vulnerability-alerts` returns `204`). Renovate's
+  `vulnerabilityAlerts` config is **on by default** (confirmed by reading
+  [`workers/repository/init/vulnerability.ts`](https://github.com/renovatebot/renovate/blob/main/lib/workers/repository/init/vulnerability.ts) -
+  it only skips this feature if explicitly set to `enabled: false`, which `renovate.json` never
+  does) - nothing needed to be added for this half, it was already active as soon as the
+  Renovate GitHub App was installed. It opens an immediate PR (bypassing both the weekly
+  schedule and the 7-day `minimumReleaseAge` cooldown - vulnerability fixes shouldn't wait a
+  week) with a `[SECURITY]` commit suffix.
+- **`osvVulnerabilityAlerts: true`** - the same [OSV.dev](https://osv.dev) database
+  `osv-scan.yml`'s two SCA passes already query, but as a second, independent source Renovate
+  itself cross-references before proposing an update. Marked `experimental` by Renovate itself
+  (tracked in [renovatebot/renovate#20542](https://github.com/renovatebot/renovate/issues/20542))
+  - worth knowing before relying on it as the only signal, which is also why the
+  GitHub-Advisory-backed default above is kept rather than treated as redundant.
+
+`configMigration: true` is also enabled: it has Renovate open a PR whenever a future Renovate
+release deprecates or renames a config key - exactly the class of problem manually fixed earlier
+in this file's history (`fileMatch` → `managerFilePatterns`, caught only because
+`renovate-config-validator --strict` was run locally before merging). Also marked `experimental`
+(Renovate's own docs note the migration PRs can still be noisy on whitespace/reordering), but
+directly prevents that exact papercut from recurring silently.
 
 ## Running these locally before pushing
 
