@@ -265,6 +265,25 @@ textarea {
   box-sizing: border-box;
 }
 
+/* The filename is stated, not offered: our software only reads one fixed name per config
+   type, so this reads as a value the form already knows rather than an empty box to fill. */
+.github-path {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+
+.github-path code {
+  font-size: 0.95rem;
+}
+
+.github-path span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .list-row input {
   flex: 1;
 }

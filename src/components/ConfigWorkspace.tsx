@@ -6,6 +6,7 @@ import {
   buildEditFileUrl,
   checkFileExists,
   fetchFileContent,
+  inferRepoFromPagesUrl,
   type FileExistsResult,
 } from '../lib/github'
 import { dataToYaml, parseYaml } from '../lib/yaml'
@@ -35,12 +36,16 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
     emptyDraftFor(definition),
   )
 
-  // owner/repo/branch are shared across config types (same target repo); path defaults to
-  // this type's conventional filename but is remembered per type once the user changes it.
-  const [owner, setOwner] = usePersistedState('github-owner', '')
-  const [repo, setRepo] = usePersistedState('github-repo', '')
+  // owner/repo/branch are shared across config types (same target repo). Served from GitHub
+  // Pages, the hosting repo is readable off the URL and is the repo these configs belong to,
+  // so owner/repo start filled in instead of blank - as a first value only, not a lock: it's
+  // still the persisted state, so editing either one sticks the way it always did.
+  const [owner, setOwner] = usePersistedState('github-owner', () => inferRepoFromPagesUrl(window.location.href)?.owner ?? '')
+  const [repo, setRepo] = usePersistedState('github-repo', () => inferRepoFromPagesUrl(window.location.href)?.repo ?? '')
   const [branch, setBranch] = usePersistedState('github-branch', 'main')
-  const [path, setPath] = usePersistedState(`github-path:${definition.id}`, definition.defaultFilename)
+  // Not editable and not persisted: our software looks for each config under one fixed name,
+  // so letting anyone retarget it only produces a file the software never reads.
+  const path = definition.defaultFilename
 
   const [checkState, setCheckState] = useState<'idle' | 'checking' | FileExistsResult>('idle')
   // The location a check was last run for. Once the target fields change, the check is stale
@@ -118,10 +123,13 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
         <section className="card">
           <h2>Target file on GitHub</h2>
           <div className="github-row">
-            <input value={owner} placeholder="owner" onChange={(e) => setOwner(e.target.value)} />
-            <input value={repo} placeholder="repo" onChange={(e) => setRepo(e.target.value)} />
-            <input value={branch} placeholder="branch" onChange={(e) => setBranch(e.target.value)} />
-            <input value={path} placeholder="path/to/file.yaml" onChange={(e) => setPath(e.target.value)} />
+            <input value={owner} placeholder="owner" aria-label="owner" onChange={(e) => setOwner(e.target.value)} />
+            <input value={repo} placeholder="repo" aria-label="repo" onChange={(e) => setRepo(e.target.value)} />
+            <input value={branch} placeholder="branch" aria-label="branch" onChange={(e) => setBranch(e.target.value)} />
+            <p className="github-path">
+              <code>{path}</code>
+              <span>fixed filename — this is where our software looks for it</span>
+            </p>
           </div>
         </section>
 

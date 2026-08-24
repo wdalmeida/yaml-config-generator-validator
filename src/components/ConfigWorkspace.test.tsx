@@ -48,10 +48,10 @@ const validYaml = [
   '',
 ].join('\n')
 
-function fillTargetFile({ owner = 'acme-co', repo = 'infra', path = 'config.yaml' } = {}) {
+// The filename isn't part of this: it's fixed to the definition's default and has no input.
+function fillTargetFile({ owner = 'acme-co', repo = 'infra' } = {}) {
   fireEvent.change(screen.getByPlaceholderText('owner'), { target: { value: owner } })
   fireEvent.change(screen.getByPlaceholderText('repo'), { target: { value: repo } })
-  fireEvent.change(screen.getByPlaceholderText('path/to/file.yaml'), { target: { value: path } })
 }
 
 async function yamlField() {
@@ -117,6 +117,44 @@ describe('ConfigWorkspace', () => {
     fireEvent.change(screen.getByPlaceholderText('product name'), { target: { value: 'checkout' } })
 
     expect(field).toHaveValue('tenant: [unterminated')
+  })
+
+  it('states the filename instead of offering it as an editable field', () => {
+    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+
+    expect(screen.getByText(tenantConfigDefinition.defaultFilename)).toBeInTheDocument()
+    // Only owner/repo/branch are inputs - there is no way to retarget the filename.
+    const targetSection = screen.getByRole('heading', { name: 'Target file on GitHub' }).closest('section')!
+    expect(within(targetSection).getAllByRole('textbox')).toHaveLength(3)
+  })
+
+  it('prefills owner and repo from the URL when served from GitHub Pages', () => {
+    vi.stubGlobal('location', new URL('https://acme.github.io/widget-service/'))
+
+    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+
+    expect(screen.getByPlaceholderText('owner')).toHaveValue('acme')
+    expect(screen.getByPlaceholderText('repo')).toHaveValue('widget-service')
+  })
+
+  it('leaves owner and repo blank when served from anywhere else', () => {
+    vi.stubGlobal('location', new URL('http://localhost:8080/'))
+
+    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+
+    expect(screen.getByPlaceholderText('owner')).toHaveValue('')
+    expect(screen.getByPlaceholderText('repo')).toHaveValue('')
+  })
+
+  it('keeps an edited owner/repo over the Pages-derived default', () => {
+    vi.stubGlobal('location', new URL('https://acme.github.io/widget-service/'))
+
+    const { unmount } = render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+    fireEvent.change(screen.getByPlaceholderText('repo'), { target: { value: 'other-service' } })
+    unmount()
+
+    render(<ConfigWorkspace definition={tenantConfigDefinition} />)
+    expect(screen.getByPlaceholderText('repo')).toHaveValue('other-service')
   })
 
   it('Fetch from GitHub loads the file content into the field and syncs the form', async () => {
