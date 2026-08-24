@@ -4,21 +4,65 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "enabledManagers": ["github-actions"],
+  "enabledManagers": ["github-actions", "custom.regex"],
   "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
-  "packageRules": [
+  "customManagers": [
     {
-      "description": "npm deps and regular `uses: owner/repo@sha` action pins are already handled by .github/dependabot.yml. Renovate exists solely for what Dependabot's github-actions parser explicitly does not support: Docker image digests in a job's `container:`/`services:` fields, or a `uses: docker://...` step (confirmed by reading dependabot-core's file_parser.rb, which skips `docker://` refs with a standing TODO and never inspects `container:` at all) - see docs/supply-chain-security.md.",
-      "matchDepTypes": ["action", "github-runner", "uses-with"],
-      "enabled": false,
-      "minimumReleaseAge": "7 days"
+      "customType": "regex",
+      "description": "actionlint: ci.yml pins the download-actionlint.bash script to a commit SHA of rhysd/actionlint itself, then passes the actionlint version to download as a separate argument - keep both in lockstep.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "actionlint/(?<currentDigest>[0-9a-f]{40})/scripts/download-actionlint\\.bash\\)\\s+(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "rhysd/actionlint",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
     },
     {
-      "description": "The actually-active rule: Docker image digests (e.g. supply-chain.yml's semgrep/semgrep container). Same 7-day cooldown as .github/dependabot.yml, stated explicitly here too.",
-      "matchDepTypes": ["container", "docker", "service"],
-      "enabled": true,
-      "minimumReleaseAge": "7 days"
+      "customType": "regex",
+      "description": "gitleaks CLI, downloaded and checksum-verified directly from GitHub Releases in ci.yml (not the gitleaks-action wrapper) via a GITLEAKS_VERSION env var - matching that one declaration keeps every other reference to the version in the same step (interpolated from the env var) in sync automatically.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "GITLEAKS_VERSION:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "gitleaks/gitleaks",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "zizmor, installed from PyPI with an exact pinned version in ci.yml.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "pip install zizmor==(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "zizmor",
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Syft, installed and run directly (not via anchore/sbom-action) in both supply-chain.yml and release.yml via a shared SYFT_VERSION env var - keep both files in sync.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "SYFT_VERSION:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "anchore/syft",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Batch every uses:/container digest bump (including plain re-pins where only the SHA changed, not the version) into one weekly PR instead of one per action - this repo already reviews and merges them together.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "Batch the workflow-embedded tool version bumps (actionlint, gitleaks, zizmor, Syft) into their own single weekly PR, separate from the github actions group above.",
+      "matchManagers": ["custom.regex"],
+      "groupName": "workflow tool versions"
     }
   ]
 }
