@@ -4,7 +4,7 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "enabledManagers": ["github-actions", "custom.regex", "npm"],
+  "enabledManagers": ["github-actions", "custom.regex", "npm", "dockerfile"],
   "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
   "configMigration": true,
@@ -51,12 +51,34 @@
     },
     {
       "customType": "regex",
-      "description": "Syft, installed and run directly (not via anchore/sbom-action) in both supply-chain.yml and release.yml via a shared SYFT_VERSION env var - keep both files in sync.",
+      "description": "Syft, installed and run directly (not via anchore/sbom-action) in supply-chain.yml, release.yml and container.yml via a shared SYFT_VERSION env var - keep every file in sync.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
         "SYFT_VERSION:\\s*(?<currentValue>[0-9.]+)"
       ],
       "depNameTemplate": "anchore/syft",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "hadolint, the Containerfile linter, downloaded and checksum-verified directly from GitHub Releases in container.yml via a HADOLINT_VERSION env var.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "HADOLINT_VERSION:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "hadolint/hadolint",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "Trivy, the container image scanner, downloaded and checksum-verified directly from GitHub Releases in container.yml via a TRIVY_VERSION env var - not aquasecurity/trivy-action, which fetches its own binary at runtime, the same nested-fetch problem that ruled out anchore/sbom-action for Syft above.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "TRIVY_VERSION:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "depNameTemplate": "aquasecurity/trivy",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
     }
@@ -74,9 +96,20 @@
       "automerge": true
     },
     {
-      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs plus supply-chain.yml's sbom job would fail outright if a bump broke anything.",
+      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan jobs would fail outright if a bump broke anything.",
       "matchManagers": ["custom.regex"],
       "groupName": "workflow tool versions",
+      "automerge": true
+    },
+    {
+      "description": "Batch the Containerfile's two digest-pinned base images (node builder, nginx-unprivileged runtime) into one weekly PR.",
+      "matchManagers": ["dockerfile"],
+      "groupName": "container base images"
+    },
+    {
+      "description": "Automerge base image digest-only re-pins once CI passes: the pinned version comment doesn't change, the registry just rebuilt the same tag. container.yml genuinely exercises the new base - it builds the image, smoke-tests it running (health endpoint, real page, non-root UID, security headers) and scans it with both Trivy and OSV-Scanner - so an automerged digest bump is a tested one. Version bumps (a new node or nginx release) still get a manual PR.",
+      "matchManagers": ["dockerfile"],
+      "matchUpdateTypes": ["digest"],
       "automerge": true
     },
     {

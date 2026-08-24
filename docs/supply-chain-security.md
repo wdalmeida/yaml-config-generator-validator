@@ -18,6 +18,13 @@ fully open source) as a second, independent SAST engine, and `.github/workflows/
 `gitleaks` job scans for secrets on every push/PR (MIT-licensed; also runs locally as a
 pre-commit hook - see `CLAUDE.md`).
 
+`.github/workflows/container.yml` applies the same treatment to the OCI image built from
+`Containerfile` - hadolint on the file, a smoke test of the running container, Trivy and a
+second OSV-Scanner pass over the image, and (on `main`) a GHCR push with SLSA provenance and
+SBOM attestations. See [running as a container](container.md) for the job-by-job breakdown; the
+patterns below (checksum-verified tool installs, digest pinning, regex-managed versions) apply
+there identically.
+
 ## GitHub Actions-specific security linting (`zizmor`)
 
 `actionlint` (in `ci.yml`) checks workflow syntax and embedded shell via shellcheck; Semgrep's
@@ -192,17 +199,19 @@ repos. Nothing runs until that's done.
 
 ## Pinning tool versions inside `run:` scripts
 
-actionlint, gitleaks, zizmor, and Syft aren't installed via a `uses:` action (see above for why,
-per-tool) - each is downloaded/installed at an exact version inside a `run:` step, which means
-neither Dependabot's nor Renovate's built-in `github-actions` manager can see them. `renovate.json`
-adds four `customManagers` (regex-based) to close this gap, one per tool:
+actionlint, gitleaks, zizmor, Syft, hadolint and Trivy aren't installed via a `uses:` action (see
+above for why, per-tool) - each is downloaded/installed at an exact version inside a `run:` step,
+which means neither Dependabot's nor Renovate's built-in `github-actions` manager can see them.
+`renovate.json` adds six `customManagers` (regex-based) to close this gap, one per tool:
 
 | Tool | Where | What's tracked | Datasource |
 |---|---|---|---|
 | actionlint | `ci.yml`'s `actionlint` job | Both the `rhysd/actionlint` commit SHA the `download-actionlint.bash` script URL is pinned to, and the version argument passed to it - one regex captures both (`currentDigest` and `currentValue`) from a single match, so they're always bumped together | `github-tags` |
 | gitleaks | `ci.yml`'s `gitleaks` job | The `GITLEAKS_VERSION` env var | `github-releases` |
 | zizmor | `ci.yml`'s `zizmor` job | The `pip install zizmor==1.29.0` version pin | `pypi` |
-| Syft | `supply-chain.yml`'s `sbom` job and `release.yml`'s `build-and-attach` job | The `SYFT_VERSION` env var, matched in both files so a bump keeps them in sync | `github-releases` |
+| Syft | `supply-chain.yml`'s `sbom` job, `release.yml`'s `build-and-attach` job and `container.yml`'s `build` job | The `SYFT_VERSION` env var, matched in all three files so a bump keeps them in sync | `github-releases` |
+| hadolint | `container.yml`'s `hadolint` job | The `HADOLINT_VERSION` env var | `github-releases` |
+| Trivy | `container.yml`'s `scan` job | The `TRIVY_VERSION` env var | `github-releases` |
 
 **Each version must appear exactly once per matched line, or a regex-manager bump only rewrites
 the one occurrence it matched and leaves the rest stale.** The gitleaks step originally spelled
@@ -245,11 +254,12 @@ npx --yes -p renovate renovate-config-validator --strict renovate.json
 
 ## Grouping and update pacing
 
-`renovate.json`'s `packageRules` groups updates into up to three PRs per run instead of one per
+`renovate.json`'s `packageRules` groups updates into up to four PRs per run instead of one per
 dependency: `groupName: "github actions"` for every `uses:`/digest bump (including plain re-pins
 where GitHub moved a tag to a new commit but the version didn't change), `groupName: "workflow
-tool versions"` for the four `customManagers` above, and `groupName: "npm dependencies
-(minor/patch)"` for every npm minor/patch bump. npm **majors** are deliberately left out of that
+tool versions"` for the six `customManagers` above, `groupName: "container base images"` for the
+two digest-pinned bases in `Containerfile`, and `groupName: "npm dependencies (minor/patch)"` for
+every npm minor/patch bump. npm **majors** are deliberately left out of that
 last group - each still gets its own PR, since a major bump (react 19→20, vite 8→9) is more
 likely to need actual code changes here, and bundling one with unrelated minor/patch bumps would
 force reviewing/blocking on all of them together. This repo already reviews and merges its
@@ -278,18 +288,23 @@ semver ranges - this doesn't change any version constraint) in its own single PR
 This repo's branch protection ruleset (see `docs/releasing.md`) already requires passing status
 checks before merge but no human approval count (solo maintainer) - so for an update where there
 is nothing to actually review, requiring a manual click adds friction without adding safety.
-`renovate.json`'s `packageRules` turn on `automerge` for three cases, each layered onto the
+`renovate.json`'s `packageRules` turn on `automerge` for four cases, each layered onto the
 grouping rules above rather than replacing them:
 
 - **GitHub Action digest-only re-pins**: the pinned version (the `# vX.Y.Z` comment) doesn't
   change - GitHub just moved the tag to a new commit - so there's no functional difference to
   review, only a new hash to trust (which `sast`'s mutable-tag check and Plumber's known-CVE
   action check would still catch if it mattered).
-- **The workflow tool-version group** (actionlint, gitleaks, zizmor, Syft): each is checksum- or
-  SHA-verified at install time inside the workflow itself regardless of what version Renovate
-  bumps it to, and `ci.yml`'s own `actionlint`/`gitleaks`/`zizmor` jobs (plus `supply-chain.yml`'s
-  `sbom` job for Syft) would fail outright if a bump broke something - the same tools are used to
-  validate their own updates.
+- **The workflow tool-version group** (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy): each
+  is checksum- or SHA-verified at install time inside the workflow itself regardless of what
+  version Renovate bumps it to, and `ci.yml`'s own `actionlint`/`gitleaks`/`zizmor` jobs (plus
+  `supply-chain.yml`'s `sbom` job for Syft and `container.yml`'s `hadolint`/`scan` jobs) would
+  fail outright if a bump broke something - the same tools are used to validate their own updates.
+- **Container base image digest-only re-pins**: same reasoning as the action re-pins, with more
+  behind it - `container.yml` builds the image on the new base, runs it, and asserts the health
+  endpoint, the served page, the non-root UID and every security header before the PR can merge,
+  then scans it with Trivy and OSV-Scanner. A *version* bump (a new node or nginx release) is not
+  automerged.
 - **npm minor/patch bumps**: gated behind this repo's full `lint`/`build`/`test:coverage`/
   `lint:schemas` suite, same as any other change. Majors are deliberately excluded from
   automerge (and from the grouping rule) - a major bump (react 19→20, vite 8→9) is more likely to
