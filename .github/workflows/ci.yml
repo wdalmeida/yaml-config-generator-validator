@@ -54,7 +54,7 @@ jobs:
           name: oxlint-results
           path: oxlint-results.sarif
           retention-days: 90
-      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -103,7 +103,7 @@ jobs:
           name: markdownlint-results
           path: markdownlint-results.sarif
           retention-days: 90
-      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -183,7 +183,7 @@ jobs:
           path: gitleaks-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true
         with:
@@ -230,7 +230,7 @@ jobs:
           path: zizmor-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -262,4 +262,4 @@ jobs:
       # until it's closed. Self-contained: verifies its own binary against checksums.txt + a
       # Sigstore/SLSA attestation before running, and handles its own SARIF/artifact upload
       # internally.
-      - uses: getplumber/plumber@56369e7d43c4878049ee8ec6c2d600c21af45c4e # v0.4.40
+      - uses: getplumber/plumber@3feac69e925e9771f8a495f4177af754d568c1ad # v0.4.48
