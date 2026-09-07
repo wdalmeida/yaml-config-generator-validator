@@ -214,7 +214,7 @@ jobs:
       # template injection via untrusted context values, overly broad workflow permissions,
       # impostor commits, credential persistence through checkout. Installed from PyPI
       # (registry-integrity-checked, exact version pinned) rather than a raw binary download.
-      - run: pip install zizmor==1.29.0
+      - run: pip install zizmor==1.30.0
 
       - name: zizmor (SARIF, for code scanning)
         id: zizmor
