@@ -202,7 +202,7 @@ jobs:
 
       - name: Install Syft (checksum-verified, no anchore/sbom-action)
         env:
-          SYFT_VERSION: 1.51.0
+          SYFT_VERSION: 1.51.1
         run: |
           set -euo pipefail
           asset="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
