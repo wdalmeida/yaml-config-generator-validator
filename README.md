@@ -15,14 +15,20 @@ and watch it update, or fetch/paste/edit YAML directly and watch the form sync b
 valid. Push it as a new file via a prefilled "create file" link, or update an existing one
 (copies the YAML for you, since GitHub can't prefill an edit).
 
-The **Onboarding** pill is that same screen in checklist form: imperative steps you tick off
-(ticked ones strike through and go green), each with whatever it needs to be done — docs, a
-website, a Jira ticket, a command to copy, or a jump straight to the config pill it's about.
-The steps live in a JSON file, so the process is edited without touching the app. Type your
-tenant and product once there and one button seeds them into the config drafts.
+The **Onboarding** pill is the front door and looks nothing like the rest: one centred column
+of imperative steps you tick off (ticked ones strike through and go green), each carrying
+whatever it takes to do it — docs, a website, a Jira ticket, a command to copy, or a jump
+straight to the pill that generates its output. The steps live in a JSON file, so the process
+is edited without touching the app. Type your tenant and product once there and one button
+seeds them into every pill that needs them.
 
-CI/CD/Env/Protection schemas and the shipped checklist steps are placeholders pending real
-specs — see `CLAUDE.md`.
+The **Kubernetes** pill is one of those outputs: a namespace, two service accounts, a Role, a
+RoleBinding and a token Secret each, all named from your tenant and product, rendered as one
+stream to copy and `kubectl apply`. No file, no schema — see
+[Kubernetes resources](docs/kubernetes-resources.md).
+
+CI/CD/Env/Protection schemas, the shipped checklist steps, and the Kubernetes RBAC are
+placeholders pending real specs — see `CLAUDE.md`.
 
 See `CLAUDE.md` for architecture details.
 
@@ -41,7 +47,8 @@ npm test              # or: npm run test:coverage
 ## Docs
 
 - [Adding or updating a config schema](docs/adding-a-schema.md)
-- [Adding or updating onboarding steps](docs/adding-onboarding-steps.md) — the checklist file format, its action types, and what the checklist YAML carries
+- [Adding or updating onboarding steps](docs/adding-onboarding-steps.md) — the checklist file format and its action types
+- [Kubernetes resources](docs/kubernetes-resources.md) — what the Kubernetes pill renders, and what in it is still a placeholder
 - [Deploying to GitHub Pages](docs/deploying-to-github-pages.md)
 - [Running as a container](docs/container.md) — Buildah/OCI build of the static site, and the CI that builds, scans and publishes it
 - [Supply chain security](docs/supply-chain-security.md) — SBOM, attestations, SCA/SAST scanning

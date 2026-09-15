@@ -1,21 +1,25 @@
 import { CONFIG_DEFINITIONS, getDraftStatus, type ConfigDefinition, type DraftStatus } from './configs'
+import { getKubernetesStatus, KUBERNETES_DEFINITION } from './kubernetes'
 import { getOnboardingStatus, ONBOARDING_DEFINITIONS, type OnboardingDefinition } from './onboarding'
 
-// The only module that knows both kinds of pill exist. Wrapping the two registries here - rather
+// The only module that knows every kind of pill exists. Wrapping the registries here - rather
 // than adding a `kind` field to ConfigDefinition, or widening it with optional schema?/fields? -
-// keeps ConfigWorkspace's prop non-optional and leaves exactly two narrowings in the codebase
-// (navStatus below, and the JSX branch in App), both on a union TypeScript exhaustively checks.
+// keeps ConfigWorkspace's prop non-optional. Narrowings live in navStatus and the JSX branch in
+// App, both exhaustively checked by TypeScript.
 export type NavEntry =
   | { kind: 'config'; id: string; label: string; definition: ConfigDefinition }
   | { kind: 'onboarding'; id: string; label: string; definition: OnboardingDefinition }
+  | { kind: 'kubernetes'; id: string; label: string }
 
-// Onboarding first: it's the front door for someone who doesn't yet know which files they need.
-// `selected-config-id` is persisted, so this only changes the default pill for a fresh browser.
+// Onboarding first: it's the front door for someone who doesn't yet know what they need.
+// Kubernetes last: it's an output of the process, not one of the repo's config files.
+// `selected-config-id` is persisted, so ordering only sets the default pill for a fresh browser.
 export const NAV_ENTRIES: NavEntry[] = [
   ...ONBOARDING_DEFINITIONS.map(
     (definition): NavEntry => ({ kind: 'onboarding', id: definition.id, label: definition.label, definition }),
   ),
   ...CONFIG_DEFINITIONS.map((definition): NavEntry => ({ kind: 'config', id: definition.id, label: definition.label, definition })),
+  { kind: 'kubernetes', id: KUBERNETES_DEFINITION.id, label: KUBERNETES_DEFINITION.label },
 ]
 
 // Unlike getConfigDefinition, this never throws. `selected-config-id` lives in the user's
@@ -27,5 +31,16 @@ export function getNavEntry(id: string): NavEntry {
 }
 
 export function navStatus(entry: NavEntry): DraftStatus {
-  return entry.kind === 'config' ? getDraftStatus(entry.definition) : getOnboardingStatus(entry.definition)
+  switch (entry.kind) {
+    case 'config':
+      return getDraftStatus(entry.definition)
+    case 'onboarding':
+      return getOnboardingStatus(entry.definition)
+    case 'kubernetes':
+      return getKubernetesStatus()
+  }
 }
+
+// Every pill a step's `config` action may point at - i.e. everything except the checklist
+// itself, which is where such a step already lives.
+export const LINKABLE_PILL_IDS = NAV_ENTRIES.filter((e) => e.kind !== 'onboarding').map((e) => e.id)

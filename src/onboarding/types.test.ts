@@ -4,7 +4,6 @@ import { checklistSchema, onboardingFileSchema } from './types'
 const minimal = {
   title: 'Onboarding',
   'x-onboarding-id': 'onboarding',
-  'x-default-filename': 'onboarding.yml',
   steps: [{ id: 'first', title: 'Do the thing' }],
 }
 
@@ -19,9 +18,9 @@ describe('onboardingFileSchema', () => {
     expect(parsed.success && parsed.data.steps[0].actions).toEqual([])
   })
 
-  it('rejects a file missing its id, filename, or steps', () => {
+  it('rejects a file missing its id, its title, or its steps', () => {
     expect(onboardingFileSchema.safeParse({ ...minimal, 'x-onboarding-id': undefined }).success).toBe(false)
-    expect(onboardingFileSchema.safeParse({ ...minimal, 'x-default-filename': undefined }).success).toBe(false)
+    expect(onboardingFileSchema.safeParse({ ...minimal, title: undefined }).success).toBe(false)
     expect(onboardingFileSchema.safeParse({ ...minimal, steps: [] }).success).toBe(false)
   })
 

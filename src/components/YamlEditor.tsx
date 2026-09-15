@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { EditorState } from '@codemirror/state'
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers, placeholder } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { defaultHighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language'
@@ -43,13 +44,18 @@ interface YamlEditorProps {
   onFocus?: () => void
   onBlur?: () => void
   placeholder?: string
+  // Rendered output rather than an editable document (the Kubernetes manifests are templated
+  // from their inputs, so there is nothing to sync back). Fixed at mount like `placeholder`,
+  // since no caller toggles it and making it reconfigurable would mean a compartment for one
+  // unused case.
+  readOnly?: boolean
 }
 
 // A minimal, hand-wired CodeMirror 6 wrapper - no @uiw/react-codemirror, no `codemirror`
 // meta-package (both pull in autocomplete/search/theming this app doesn't use). Lazy-loaded
 // (see ConfigWorkspace's `React.lazy`) since CodeMirror is the single largest dependency here -
 // see .size-limit.json's separate "YAML editor (lazy-loaded)" budget entry.
-export default function YamlEditor({ value, onChange, onFocus, onBlur, placeholder: placeholderText }: YamlEditorProps) {
+export default function YamlEditor({ value, onChange, onFocus, onBlur, placeholder: placeholderText, readOnly = false }: YamlEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
 
@@ -71,6 +77,7 @@ export default function YamlEditor({ value, onChange, onFocus, onBlur, placehold
   // "run once."
   const initialValueRef = useRef(value)
   const initialPlaceholderRef = useRef(placeholderText)
+  const readOnlyRef = useRef(readOnly)
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -90,6 +97,10 @@ export default function YamlEditor({ value, onChange, onFocus, onBlur, placehold
         EditorView.lineWrapping,
         theme,
         initialPlaceholderRef.current ? placeholder(initialPlaceholderRef.current) : [],
+        // Both: readOnly blocks edit transactions, editable removes the contenteditable and
+        // the caret, so the field reads as output rather than as an input someone is expected
+        // to type into. The controlled-value sync effect below still dispatches into it.
+        readOnlyRef.current ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString())
         }),

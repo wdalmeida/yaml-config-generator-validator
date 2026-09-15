@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ConfigWorkspace } from './components/ConfigWorkspace'
+import { KubernetesWorkspace } from './components/KubernetesWorkspace'
 import { OnboardingWorkspace } from './components/OnboardingWorkspace'
 import { usePersistedState } from './lib/persisted-state'
 import { getNavEntry, NAV_ENTRIES, navStatus } from './nav'
@@ -35,16 +36,16 @@ function App() {
         ))}
       </nav>
 
-      {entry.kind === 'onboarding' ? (
+      {entry.kind === 'onboarding' && (
         <OnboardingWorkspace
           key={entry.id}
           definition={entry.definition}
           onOpenConfig={setSelectedId}
           onSeeded={() => refreshStatusDots((n) => n + 1)}
         />
-      ) : (
-        <ConfigWorkspace key={entry.id} definition={entry.definition} />
       )}
+      {entry.kind === 'config' && <ConfigWorkspace key={entry.id} definition={entry.definition} />}
+      {entry.kind === 'kubernetes' && <KubernetesWorkspace key={entry.id} />}
     </main>
   )
 }

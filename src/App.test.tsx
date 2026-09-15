@@ -80,4 +80,24 @@ describe('App', () => {
     fireEvent.click(pill('Tenant Config'))
     expect(screen.getByPlaceholderText('product name')).toHaveValue('widgets')
   })
+
+  it('seeding reaches the Kubernetes pill, which names every resource from those two values', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByLabelText('Tenant'), { target: { value: 'globex' } })
+    fireEvent.change(screen.getByLabelText('Product'), { target: { value: 'gadgets' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Seed config drafts' }))
+
+    fireEvent.click(pill('Kubernetes'))
+    // The real (unmocked) lazy YamlEditor renders here, so read the rendered document text.
+    expect(await screen.findByText(/globex-gadgets/)).toBeInTheDocument()
+  })
+
+  it('a step’s Kubernetes action switches to that pill', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Open Kubernetes/ }))
+
+    expect(pill('Kubernetes')).toHaveClass('active')
+  })
 })

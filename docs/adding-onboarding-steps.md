@@ -4,6 +4,10 @@ The **Onboarding** pill is a checklist a user works top to bottom. Its steps are
 code: one `*.onboarding.json` file per checklist in `src/onboarding/`, discovered
 automatically. Dropping a file in is the entire integration — no other file needs to change.
 
+The checklist itself produces no file. A step's *output* is either one of the config files
+(each on its own pill) or the Kubernetes resources (also its own pill), so the page is nothing
+but the steps: progress is saved in the browser and never leaves it.
+
 If you're looking for the *config file* schemas instead (Tenant Config, CI, CD, Env,
 Protection), see [Adding or updating a config schema](adding-a-schema.md).
 
@@ -26,7 +30,6 @@ page:
   "$schema": "./onboarding.meta.schema.json",
   "title": "Onboarding",
   "x-onboarding-id": "onboarding",
-  "x-default-filename": "onboarding.yml",
   "steps": [
     {
       "id": "raise-request",
@@ -42,8 +45,7 @@ page:
 | Key | Required | Meaning |
 | --- | --- | --- |
 | `title` | yes | The pill label. |
-| `x-onboarding-id` | yes | Stable id. Also the `localStorage` key suffix — **changing it orphans every user's saved progress**, and it must not collide with any config type's `x-config-id`. |
-| `x-default-filename` | yes | The fixed filename this checklist is committed under. |
+| `x-onboarding-id` | yes | Stable id. Also the `localStorage` key suffix — **changing it orphans every user's saved progress**, and it must not collide with any pill's id. |
 | `intro` | no | One paragraph above the step list. |
 | `steps` | yes | At least one step, in the order the user should work through them. |
 
@@ -69,7 +71,7 @@ fill in right here in the tool.
 | `link` | `url`, `label` | An external link, for anything that isn't documentation. |
 | `jira` | `key`, `label?` | A link built from the user's own Jira base URL — see below. |
 | `command` | `command`, `label?` | The command inline, with a Copy button. |
-| `config` | `configId`, `label?` | A button that switches to that config type's pill. |
+| `config` | `configId`, `label?` | A button that switches to the pill that step is about — a config type's `x-config-id`, or `kubernetes`. |
 
 ```json
 "actions": [
@@ -86,9 +88,9 @@ Rules enforced for you:
 - A `url` must be `http:` or `https:`. These values reach an `href`, so this is a security
   boundary, not style — the same rule blocks a `javascript:` Jira base URL at runtime.
 - A `jira` `key` must look like a real ticket key (`^[A-Z][A-Z0-9]+-\d+$`).
-- A `config` `configId` must name an existing config type. `npm run lint:schemas` fails on a
-  typo; at runtime an unresolvable one simply renders nothing, so deleting a schema file can
-  never white-screen the app.
+- A `config` `configId` must name an existing pill. `npm run lint:schemas` fails on a typo; at
+  runtime an unresolvable one simply renders nothing, so deleting a schema file can never
+  white-screen the app.
 
 ## The Jira base URL
 
@@ -101,26 +103,19 @@ would be worse than sending them nowhere.
 The base URL is deliberately **not** part of the checklist YAML — it's a per-user setting, not
 part of a tenant's onboarding record.
 
-## What the checklist YAML does and doesn't carry
+## Where progress lives
 
-The right-hand panel is the checklist as a file the user can copy, commit, or paste back:
+Ticks are saved to `localStorage` under `onboarding:<x-onboarding-id>`, as the list of ticked
+step ids. That list is the whole state — there is no checklist file to commit, fetch or push.
 
-```yaml
-tenant: acme
-product: widgets
-completed:
-  - raise-request
-  - bootstrap-local
-```
+Consequences worth knowing when you edit a file:
 
-- It carries **state only** — the step list itself always comes from the `.onboarding.json`
-  file, which stays authoritative.
-- `completed` is a list of ticked ids. So a step you *add* to the file is simply unticked for
-  everyone, and a step you *remove* stops rendering — both correct, with no migration.
-- An id in `completed` that matches no step is **kept**, not dropped, so renaming a step id and
-  reverting doesn't destroy someone's pasted-back progress.
-- Ticked ids are always emitted in the order the steps are declared, so the file stays
-  diffable rather than reordering itself as the user ticks around.
+- A step you **add** is simply unticked for everyone. A step you **remove** stops rendering.
+  Both are correct with no migration.
+- Renaming a step's `id` orphans that step's saved progress, which is why the id is described
+  as stable above. An id in storage matching no step is **kept**, not discarded, so a rename
+  and a revert doesn't destroy someone's ticks.
+- Progress is per-browser. It does not sync between machines and is not shared with anyone.
 
 ## Things handled for you (don't hand-roll these)
 
@@ -129,11 +124,9 @@ completed:
   (`getOnboardingStatus` in `src/onboarding/index.ts`).
 - **Persistence**: progress saves to `localStorage` under `onboarding:<x-onboarding-id>` on
   every change; nothing to wire up.
-- **Two-way sync**: ticking updates the YAML panel, and pasting valid YAML updates the
-  checkboxes. Invalid YAML shows errors and leaves the checklist untouched.
-- **Seeding**: the tenant/product typed here can be pushed into the config types' drafts with
+- **Seeding**: the tenant/product typed here can be pushed into the other pills' drafts with
   one button. It only writes `text` and `select-or-text` fields named `tenant` or `product`,
-  and it reports exactly which types it touched — see `src/onboarding/seed.ts`.
+  and it reports exactly which pills it touched — see `src/onboarding/seed.ts`.
 
 ## Checklist after editing an onboarding file
 

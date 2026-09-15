@@ -109,7 +109,7 @@ describe('seedConfigDrafts', () => {
 
 describe('describeSeedResults', () => {
   it('says plainly when nothing matched, rather than implying it touched anything', () => {
-    expect(describeSeedResults([])).toEqual(['Nothing to seed — no config type has a Tenant or Product field yet.'])
+    expect(describeSeedResults([])).toEqual(['Nothing to seed — nothing else has a Tenant or Product field yet.'])
   })
 
   it('names the fields and the destination, and each replacement separately', () => {

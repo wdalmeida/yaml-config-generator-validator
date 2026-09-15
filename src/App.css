@@ -368,10 +368,57 @@ textarea {
   margin-bottom: var(--space-4);
 }
 
+/* Onboarding is deliberately NOT the two-column .workspace grid: there's no file to render
+   beside it (a step's output is a config pill or the Kubernetes pill, each with its own YAML),
+   so the steps are the page. One centred column at a comfortable reading measure, which also
+   means no breakpoint of its own - it's already narrower than where .workspace collapses. */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.card-note {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.onboarding-details-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.onboarding-details-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.onboarding-actions .github-hint {
+  margin-top: 0;
+}
+
+.checklist-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 /* An ordered list, because onboarding steps are imperative and sequential - the numbering is
-   part of the content, not decoration. No new @media rule: this lives inside the existing
-   .workspace grid, and a step is a flex column with a wrapping link strip, so there are no
-   columns of its own to collapse below 860px. */
+   part of the content, not decoration. */
 .checklist {
   list-style: none;
   margin: 0;
@@ -388,16 +435,20 @@ textarea {
 
 /* Divider on every row including the last, matching .card-flat. */
 .checklist-step {
-  padding: var(--space-3) 0;
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--border);
+}
+
+.checklist-step:last-child {
+  border-bottom: none;
 }
 
 .checklist-step-title {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-3);
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 1rem;
   cursor: pointer;
 }
 
@@ -421,7 +472,7 @@ textarea {
 
 .checklist-step-detail {
   margin-top: var(--space-1);
-  padding-left: 1.4rem;
+  padding-left: 1.75rem;
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -432,7 +483,7 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
-  padding-left: 1.4rem;
+  padding-left: 1.75rem;
 }
 
 .step-link {
@@ -446,6 +497,28 @@ textarea {
   color: inherit;
   text-decoration: none;
   font-size: 0.8rem;
+}
+
+/* A short prose block above the manifests, so the placeholder warning is on the page as well
+   as inside the YAML the user copies out. */
+.placeholder-warning {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.placeholder-warning strong {
+  color: var(--warn);
+}
+
+.resource-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 /* A Jira key with no usable base URL yet: the reference is still worth showing and copying, but

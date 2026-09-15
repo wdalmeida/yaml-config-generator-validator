@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CONFIG_DEFINITIONS } from '../configs'
+import { LINKABLE_PILL_IDS } from '../nav'
 import { writePersistedState } from '../lib/persisted-state'
 import { checklistKey, getOnboardingStatus, ONBOARDING_DEFINITIONS, readChecklist } from './index'
 import { emptyChecklist, requiredStepIds } from './types'
@@ -13,6 +14,9 @@ afterEach(() => {
 })
 
 const configIds = new Set(CONFIG_DEFINITIONS.map((d) => d.id))
+// A `config` action may point at any pill except the checklist itself - including Kubernetes,
+// which generates resources rather than a repo file.
+const linkableIds = new Set(LINKABLE_PILL_IDS)
 const definition = ONBOARDING_DEFINITIONS[0]
 
 // This suite is the CI gate on the shipped *.onboarding.json files: a bad one throws at module
@@ -38,14 +42,21 @@ describe('the shipped onboarding files', () => {
     }
   })
 
-  it('only references config types that actually exist', () => {
+  it('only references pills that actually exist', () => {
     for (const def of ONBOARDING_DEFINITIONS) {
       for (const step of def.steps) {
         for (const action of step.actions) {
-          if (action.type === 'config') expect(configIds.has(action.configId)).toBe(true)
+          if (action.type === 'config') expect(linkableIds.has(action.configId)).toBe(true)
         }
       }
     }
+  })
+
+  it('links to the Kubernetes pill, not just the config file pills', () => {
+    const targets = ONBOARDING_DEFINITIONS.flatMap((def) =>
+      def.steps.flatMap((step) => step.actions.filter((a) => a.type === 'config').map((a) => a.configId)),
+    )
+    expect(targets).toContain('kubernetes')
   })
 
   it('writes every step title in the imperative mood (starts with a capitalised verb, not a question)', () => {

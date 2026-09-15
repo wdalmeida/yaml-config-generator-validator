@@ -9,7 +9,7 @@
 // 2. src/onboarding/*.onboarding.json are *data*, not schema documents, so the meta-schema has
 //    nothing to say about them. They're validated against our own checked-in meta-schema
 //    (the same one their $schema key points at, so an editor and CI agree), plus a referential
-//    check that every `configId` names a config type that exists. Zod re-checks the same shape
+//    check that every `configId` names a pill that exists. Zod re-checks the same shape
 //    at runtime; this pass is what turns a malformed file into a CI failure rather than a
 //    white screen.
 import { readFileSync, readdirSync } from 'node:fs'
@@ -36,13 +36,17 @@ function fail(file, message) {
 // --- Pass 1: config schemas are themselves JSON Schema documents -------------------------
 
 const schemaFiles = readdirSync(schemasDir).filter((f) => f.endsWith('.schema.json'))
-const configIds = new Set()
+
+// Pills a step's `config` action may point at. The config types are discovered below; the
+// Kubernetes pill isn't schema-driven (it renders manifests from two inputs rather than
+// validating a file), so it's named here - mirroring KUBERNETES_ID in src/kubernetes/index.ts.
+const pillIds = new Set(['kubernetes'])
 
 for (const file of schemaFiles) {
   try {
     const schema = JSON.parse(readFileSync(path.join(schemasDir, file), 'utf8'))
     ajv.compile(schema)
-    if (schema['x-config-id']) configIds.add(schema['x-config-id'])
+    if (schema['x-config-id']) pillIds.add(schema['x-config-id'])
     console.log(`OK    ${file}`)
   } catch (err) {
     fail(file, err instanceof Error ? err.message : err)
@@ -81,20 +85,20 @@ if (validateOnboarding) {
       }
 
       // Referential integrity the meta-schema can't express: a `config` action must name a
-      // config type that exists, or the step renders a button that goes nowhere.
+      // pill that exists, or the step renders a button that goes nowhere.
       const missing = []
       const seenStepIds = new Set()
       for (const step of doc.steps) {
         if (seenStepIds.has(step.id)) fail(file, `duplicate step id: ${step.id}`)
         seenStepIds.add(step.id)
         for (const action of step.actions ?? []) {
-          if (action.type === 'config' && !configIds.has(action.configId)) {
+          if (action.type === 'config' && !pillIds.has(action.configId)) {
             missing.push(`${step.id} -> ${action.configId}`)
           }
         }
       }
       if (missing.length > 0) {
-        fail(file, `config action names an unknown config type: ${missing.join(', ')}`)
+        fail(file, `config action names an unknown pill: ${missing.join(', ')}`)
         continue
       }
 

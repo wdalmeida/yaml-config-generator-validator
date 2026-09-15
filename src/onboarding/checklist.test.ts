@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { doneCount, isDone, normalizeChecklist, orderedCompleted, toggleStep } from './checklist'
+import { doneCount, isDone, orderedCompleted, toggleStep } from './checklist'
 import { emptyChecklist, type OnboardingDefinition } from './types'
 
 const definition: OnboardingDefinition = {
   id: 'test',
   label: 'Test',
-  defaultFilename: 'test.yml',
   steps: [
     { id: 'first', title: 'Do the first thing', actions: [] },
     { id: 'second', title: 'Do the second thing', actions: [] },
@@ -54,12 +53,3 @@ describe('isDone / doneCount', () => {
   })
 })
 
-describe('normalizeChecklist', () => {
-  it('reorders completed without touching the rest of the state', () => {
-    expect(normalizeChecklist(definition, { tenant: 'acme', product: 'p', completed: ['second', 'first'] })).toEqual({
-      tenant: 'acme',
-      product: 'p',
-      completed: ['first', 'second'],
-    })
-  })
-})

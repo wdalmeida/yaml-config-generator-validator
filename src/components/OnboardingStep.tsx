@@ -7,15 +7,15 @@ interface OnboardingStepProps {
   done: boolean
   onToggle: (done: boolean) => void
   jiraBaseUrl: string
-  // Label for a `config` action's target pill, keyed by config id. An action naming a config
-  // type that no longer exists renders nothing rather than a dead button - forgiving at runtime
+  // Label for a `config` action's target pill, keyed by pill id. An action naming a pill
+  // that no longer exists renders nothing rather than a dead button - forgiving at runtime
   // so deleting a schema file can't white-screen the app, while lint:schemas fails on it.
-  configLabels: Record<string, string>
+  pillLabels: Record<string, string>
   onOpenConfig: (configId: string) => void
 }
 
 // Fully controlled, no local state - same contract as FieldRow.
-export function OnboardingStep({ step, done, onToggle, jiraBaseUrl, configLabels, onOpenConfig }: OnboardingStepProps) {
+export function OnboardingStep({ step, done, onToggle, jiraBaseUrl, pillLabels, onOpenConfig }: OnboardingStepProps) {
   function renderAction(action: OnboardingAction, index: number) {
     switch (action.type) {
       case 'docs':
@@ -67,7 +67,7 @@ export function OnboardingStep({ step, done, onToggle, jiraBaseUrl, configLabels
         )
 
       case 'config': {
-        const label = configLabels[action.configId]
+        const label = pillLabels[action.configId]
         if (!label) return null
         return (
           <button key={index} type="button" className="step-link" onClick={() => onOpenConfig(action.configId)}>
