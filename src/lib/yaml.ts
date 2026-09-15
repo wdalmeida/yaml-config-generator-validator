@@ -24,3 +24,13 @@ export function parseYaml<T>(schema: ZodType<T>, source: string): ParseYamlResul
   }
   return { success: true, data: result.data }
 }
+
+// Flattens a failed parse into the flat list of human-readable strings both YAML panels render.
+// Lives here rather than in a component because it's a projection of ParseYamlResult, which
+// this module owns, and both ConfigWorkspace and OnboardingWorkspace need exactly this shape.
+export function yamlIssueMessages(parsed: ParseYamlResult<unknown>): string[] {
+  if (parsed.success) return []
+  return 'yamlError' in parsed
+    ? [`YAML syntax error: ${parsed.yamlError}`]
+    : parsed.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { dataToYaml, parseYaml } from './yaml'
+import { z } from 'zod'
+import { dataToYaml, parseYaml, yamlIssueMessages } from './yaml'
 import { getConfigDefinition } from '../configs'
 
 // Config shapes are generated from JSON Schema now (see src/configs/json-schema.ts), so there's
@@ -44,5 +45,29 @@ describe('dataToYaml / parseYaml', () => {
     const result = parseConfig('tenant: [unterminated')
     expect(result.success).toBe(false)
     expect(result.success === false && 'yamlError' in result).toBe(true)
+  })
+})
+
+describe('yamlIssueMessages', () => {
+  const schema = z.object({ name: z.string().min(1) })
+
+  it('returns nothing for a successful parse', () => {
+    expect(yamlIssueMessages(parseYaml(schema, 'name: ok'))).toEqual([])
+  })
+
+  it('labels a YAML syntax error as such', () => {
+    const messages = yamlIssueMessages(parseYaml(schema, 'a: [1,\n'))
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatch(/^YAML syntax error: /)
+  })
+
+  it('prefixes each schema issue with its object path', () => {
+    expect(yamlIssueMessages(parseYaml(schema, 'name: ""'))).toEqual(['name: Too small: expected string to have >=1 characters'])
+  })
+
+  it('labels a root-level issue as (root)', () => {
+    expect(yamlIssueMessages(parseYaml(schema, '- 1\n- 2'))).toEqual([
+      '(root): Invalid input: expected object, received array',
+    ])
   })
 })

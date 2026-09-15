@@ -1,0 +1,148 @@
+# Adding or Updating Onboarding Steps
+
+The **Onboarding** pill is a checklist a user works top to bottom. Its steps are data, not
+code: one `*.onboarding.json` file per checklist in `src/onboarding/`, discovered
+automatically. Dropping a file in is the entire integration — no other file needs to change.
+
+If you're looking for the *config file* schemas instead (Tenant Config, CI, CD, Env,
+Protection), see [Adding or updating a config schema](adding-a-schema.md).
+
+## Is there a file format?
+
+Yes. Each file is validated three ways, so a mistake surfaces early rather than as a broken
+page:
+
+- **Your editor**, via the `$schema` key pointing at `onboarding.meta.schema.json` — you get
+  autocomplete and inline errors while typing.
+- **CI**, via `npm run lint:schemas`, which validates every `*.onboarding.json` against that
+  same meta-schema and checks referential integrity (see below).
+- **At runtime**, via a Zod schema in `src/onboarding/types.ts`, which is also what derives
+  the TypeScript types — so there's one description of the shape, not two.
+
+## A minimal file
+
+```json
+{
+  "$schema": "./onboarding.meta.schema.json",
+  "title": "Onboarding",
+  "x-onboarding-id": "onboarding",
+  "x-default-filename": "onboarding.yml",
+  "steps": [
+    {
+      "id": "raise-request",
+      "title": "Raise the onboarding request ticket",
+      "actions": [{ "type": "jira", "key": "PLAT-1001" }]
+    }
+  ]
+}
+```
+
+## Top-level keys
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `title` | yes | The pill label. |
+| `x-onboarding-id` | yes | Stable id. Also the `localStorage` key suffix — **changing it orphans every user's saved progress**, and it must not collide with any config type's `x-config-id`. |
+| `x-default-filename` | yes | The fixed filename this checklist is committed under. |
+| `intro` | no | One paragraph above the step list. |
+| `steps` | yes | At least one step, in the order the user should work through them. |
+
+## Step keys
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable, lowercase-hyphenated. This is the value written into the checklist YAML, so **renaming it orphans that step's saved progress**. |
+| `title` | yes | Write it in the **imperative mood** — "Commit config.yaml", not "Committing config.yaml" or "You should commit config.yaml". A step is an instruction. |
+| `detail` | no | One sentence of context under the title. |
+| `optional` | no | An optional step doesn't have to be ticked for the pill's dot to go green. |
+| `actions` | no | What the user needs in order to do the step — see below. Defaults to none. |
+
+## Actions
+
+A step carries as many or as few actions as it needs. **Jira is one option among several, not
+a required field**: some steps are a doc to read, some a command to run, some a config file to
+fill in right here in the tool.
+
+| `type` | Keys | Renders as |
+| --- | --- | --- |
+| `docs` | `url`, `label?` (default `Docs`) | An external link. |
+| `link` | `url`, `label` | An external link, for anything that isn't documentation. |
+| `jira` | `key`, `label?` | A link built from the user's own Jira base URL — see below. |
+| `command` | `command`, `label?` | The command inline, with a Copy button. |
+| `config` | `configId`, `label?` | A button that switches to that config type's pill. |
+
+```json
+"actions": [
+  { "type": "docs", "url": "https://example.com/docs/onboarding/tenant-config" },
+  { "type": "link", "label": "Access portal", "url": "https://example.com/portal" },
+  { "type": "jira", "key": "PLAT-1003" },
+  { "type": "command", "label": "Install the toolchain", "command": "just install" },
+  { "type": "config", "configId": "tenant-config" }
+]
+```
+
+Rules enforced for you:
+
+- A `url` must be `http:` or `https:`. These values reach an `href`, so this is a security
+  boundary, not style — the same rule blocks a `javascript:` Jira base URL at runtime.
+- A `jira` `key` must look like a real ticket key (`^[A-Z][A-Z0-9]+-\d+$`).
+- A `config` `configId` must name an existing config type. `npm run lint:schemas` fails on a
+  typo; at runtime an unresolvable one simply renders nothing, so deleting a schema file can
+  never white-screen the app.
+
+## The Jira base URL
+
+Ticket keys are stored in the checklist file, but the **host is not** — each user types their
+own Jira base URL once, and it's persisted in their browser under `jira-base-url`. Until they
+do, a step's ticket key renders as plain text rather than a link: the default placeholder
+(`https://your-org.atlassian.net`) is a domain nobody here controls, and sending a user there
+would be worse than sending them nowhere.
+
+The base URL is deliberately **not** part of the checklist YAML — it's a per-user setting, not
+part of a tenant's onboarding record.
+
+## What the checklist YAML does and doesn't carry
+
+The right-hand panel is the checklist as a file the user can copy, commit, or paste back:
+
+```yaml
+tenant: acme
+product: widgets
+completed:
+  - raise-request
+  - bootstrap-local
+```
+
+- It carries **state only** — the step list itself always comes from the `.onboarding.json`
+  file, which stays authoritative.
+- `completed` is a list of ticked ids. So a step you *add* to the file is simply unticked for
+  everyone, and a step you *remove* stops rendering — both correct, with no migration.
+- An id in `completed` that matches no step is **kept**, not dropped, so renaming a step id and
+  reverting doesn't destroy someone's pasted-back progress.
+- Ticked ids are always emitted in the order the steps are declared, so the file stays
+  diffable rather than reordering itself as the user ticks around.
+
+## Things handled for you (don't hand-roll these)
+
+- **Status dot**: grey until anything is typed or ticked, amber while in progress, green once
+  every non-`optional` step is ticked *and* tenant and product are both filled
+  (`getOnboardingStatus` in `src/onboarding/index.ts`).
+- **Persistence**: progress saves to `localStorage` under `onboarding:<x-onboarding-id>` on
+  every change; nothing to wire up.
+- **Two-way sync**: ticking updates the YAML panel, and pasting valid YAML updates the
+  checkboxes. Invalid YAML shows errors and leaves the checklist untouched.
+- **Seeding**: the tenant/product typed here can be pushed into the config types' drafts with
+  one button. It only writes `text` and `select-or-text` fields named `tenant` or `product`,
+  and it reports exactly which types it touched — see `src/onboarding/seed.ts`.
+
+## Checklist after editing an onboarding file
+
+```sh
+npm run lint:schemas   # the meta-schema, plus every configId actually resolving
+npm test               # src/onboarding/index.test.ts is the gate on the shipped files
+npm run dev            # manually: tick steps, watch the YAML panel, paste it back
+```
+
+If you're changing the *format* rather than its content, the Zod schema in
+`src/onboarding/types.ts` and the meta-schema in `src/onboarding/onboarding.meta.schema.json`
+both need the change, and `src/onboarding/types.test.ts` is where a new rule earns a case.

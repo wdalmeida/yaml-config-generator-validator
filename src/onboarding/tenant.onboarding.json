@@ -1,0 +1,78 @@
+{
+  "$schema": "./onboarding.meta.schema.json",
+  "title": "Onboarding",
+  "x-onboarding-id": "onboarding",
+  "x-default-filename": "onboarding.yml",
+  "intro": "Work top to bottom. Tick each step as you finish it — your progress is saved in this browser, and the panel on the right is the same list as a file you can commit.",
+  "steps": [
+    {
+      "id": "raise-request",
+      "title": "Raise the onboarding request ticket",
+      "detail": "One ticket per product. The platform team picks it up within two working days.",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/request" },
+        { "type": "jira", "key": "PLAT-1001" }
+      ]
+    },
+    {
+      "id": "request-repo-access",
+      "title": "Request write access to your product repository",
+      "detail": "You need this before any of the files below can be pushed.",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/access" },
+        { "type": "link", "label": "Access portal", "url": "https://example.com/portal" },
+        { "type": "jira", "key": "PLAT-1002" }
+      ]
+    },
+    {
+      "id": "bootstrap-local",
+      "title": "Bootstrap your local checkout",
+      "detail": "Installs the toolchain and runs the same checks CI does.",
+      "actions": [
+        { "type": "command", "label": "Install the toolchain", "command": "just install" },
+        { "type": "command", "command": "just ci" }
+      ]
+    },
+    {
+      "id": "create-tenant-config",
+      "title": "Commit config.yaml for your tenant",
+      "detail": "Fill it in on the Tenant Config tab, then push it with the link there.",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/tenant-config" },
+        { "type": "config", "configId": "tenant-config" },
+        { "type": "jira", "key": "PLAT-1003" }
+      ]
+    },
+    {
+      "id": "create-ci",
+      "title": "Commit ci.yml for your product",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/ci" },
+        { "type": "config", "configId": "ci" }
+      ]
+    },
+    {
+      "id": "create-cd",
+      "title": "Commit cd.yml for your product",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/cd" },
+        { "type": "config", "configId": "cd" }
+      ]
+    },
+    {
+      "id": "verify-pipeline",
+      "title": "Verify the pipeline runs green end to end",
+      "detail": "Push a no-op commit and confirm build, test and deploy all pass.",
+      "actions": [
+        { "type": "docs", "url": "https://example.com/docs/onboarding/verify" },
+        { "type": "jira", "key": "PLAT-1004" }
+      ]
+    },
+    {
+      "id": "sign-off",
+      "title": "Ask your platform contact to sign the onboarding off",
+      "optional": true,
+      "actions": [{ "type": "jira", "key": "PLAT-1005" }]
+    }
+  ]
+}

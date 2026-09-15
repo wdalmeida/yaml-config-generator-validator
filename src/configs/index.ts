@@ -1,6 +1,6 @@
 import { configDefinitionFromJsonSchema, type ConfigJsonSchema } from './json-schema'
 import { readPersistedState } from '../lib/persisted-state'
-import { draftHasContent, emptyDraftFor, parseDraft, type ConfigDefinition } from './types'
+import { draftHasContent, emptyDraftFor, parseDraft, type ConfigDefinition, type DraftStatus } from './types'
 
 // Every *.schema.json file here becomes a config type automatically - no other code change
 // needed to add one. `eager: true` bundles them at build time (this is a static site, there's
@@ -32,8 +32,6 @@ export function getConfigDefinition(id: string): ConfigDefinition {
   return definition
 }
 
-export type DraftStatus = 'empty' | 'draft' | 'valid'
-
 // Reads a config type's persisted draft straight from localStorage (without mounting its
 // form) to badge the type-switcher pills with progress, even for types not currently open.
 export function getDraftStatus(definition: ConfigDefinition): DraftStatus {
@@ -42,5 +40,5 @@ export function getDraftStatus(definition: ConfigDefinition): DraftStatus {
   return draftHasContent(definition, draft) ? 'draft' : 'empty'
 }
 
-export type { ConfigDefinition, FieldDescriptor } from './types'
+export type { ConfigDefinition, DraftStatus, FieldDescriptor } from './types'
 export { draftFromCandidate, emptyDraftFor, parseDraft } from './types'

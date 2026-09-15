@@ -22,11 +22,7 @@ export function usePersistedState<T>(key: string, initial: T | (() => T)) {
   const [value, setValue] = useState<T>(() => readStored(key, initial))
 
   useEffect(() => {
-    try {
-      localStorage.setItem(PREFIX + key, JSON.stringify(value))
-    } catch {
-      // Storage full or unavailable (e.g. private browsing) - the form still works in-memory.
-    }
+    writePersistedState(key, value)
   }, [key, value])
 
   return [value, setValue] as const
@@ -34,4 +30,17 @@ export function usePersistedState<T>(key: string, initial: T | (() => T)) {
 
 export function readPersistedState<T>(key: string, initial: T | (() => T)): T {
   return readStored(key, initial)
+}
+
+// Writes a key without mounting a hook for it, for the one case that needs it: seeding another
+// config type's draft while that type's form isn't on screen (see src/onboarding/seed.ts).
+// Returns false if storage is unavailable (quota, private browsing) so a caller can avoid
+// reporting a write that didn't actually happen - the form still works in-memory either way.
+export function writePersistedState<T>(key: string, value: T): boolean {
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
 }
