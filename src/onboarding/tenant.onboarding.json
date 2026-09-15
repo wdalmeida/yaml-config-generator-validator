@@ -17,7 +17,14 @@
           "type": "jira",
           "key": "PLAT-1001"
         }
-      ]
+      ],
+      "ui": {
+        "instructions": [
+          "Open your Jira project and pick the \"Platform onboarding\" request type.",
+          "Fill in the tenant and product names exactly as you will use them everywhere else.",
+          "Submit, and note the ticket key - the steps below reference it."
+        ]
+      }
     },
     {
       "id": "request-repo-access",
@@ -37,23 +44,47 @@
           "type": "jira",
           "key": "PLAT-1002"
         }
-      ]
+      ],
+      "ui": {
+        "instructions": [
+          "Open the access portal and search for your product repository.",
+          "Request the Write role, naming the onboarding ticket as justification.",
+          "Wait for the approval mail before continuing."
+        ]
+      },
+      "cli": {
+        "instructions": [
+          "Confirm the grant landed before moving on."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "command": "gh api repos/OWNER/REPO --jq .permissions"
+          }
+        ]
+      }
     },
     {
       "id": "bootstrap-local",
       "title": "Bootstrap your local checkout",
       "detail": "Installs the toolchain and runs the same checks CI does.",
-      "actions": [
-        {
-          "type": "command",
-          "label": "Install the toolchain",
-          "command": "just install"
-        },
-        {
-          "type": "command",
-          "command": "just ci"
-        }
-      ]
+      "actions": [],
+      "cli": {
+        "instructions": [
+          "Run these from the repository root."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "label": "Install the toolchain",
+            "command": "just install"
+          },
+          {
+            "type": "command",
+            "command": "just ci"
+          }
+        ]
+      }
     },
     {
       "id": "create-namespace",
@@ -72,7 +103,28 @@
           "type": "jira",
           "key": "PLAT-1006"
         }
-      ]
+      ],
+      "cli": {
+        "instructions": [
+          "Open the Kubernetes pill, fill in your tenant and product, and hit Copy all.",
+          "Paste the manifests into the command below and press Ctrl-D."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "command": "kubectl apply -f -"
+          }
+        ]
+      },
+      "ui": {
+        "console": "/k8s/cluster/projects",
+        "instructions": [
+          "Switch to the Administrator perspective.",
+          "Go to Home -> Projects and click Create Project.",
+          "Name it <tenant>-<product>, matching the Kubernetes pill exactly.",
+          "Then go to User Management -> Roles to add the Role and RoleBinding."
+        ]
+      }
     },
     {
       "id": "create-tenant-config",
@@ -91,7 +143,25 @@
           "type": "jira",
           "key": "PLAT-1003"
         }
-      ]
+      ],
+      "cli": {
+        "instructions": [
+          "Fill the form on the Tenant Config pill, copy the YAML, then commit it."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add config.yaml && git commit -m \"feat: add tenant config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the form on the Tenant Config pill until the YAML panel says Valid.",
+          "Hit Push to GitHub and follow the create-or-update link it reveals.",
+          "Commit on the branch GitHub opens for you."
+        ]
+      }
     },
     {
       "id": "create-ci",
@@ -105,7 +175,20 @@
           "type": "config",
           "configId": "ci"
         }
-      ]
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add ci.yml && git commit -m \"feat: add ci config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the CI pill, then use its Push to GitHub link."
+        ]
+      }
     },
     {
       "id": "create-cd",
@@ -119,7 +202,20 @@
           "type": "config",
           "configId": "cd"
         }
-      ]
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add cd.yml && git commit -m \"feat: add cd config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the CD pill, then use its Push to GitHub link."
+        ]
+      }
     },
     {
       "id": "verify-pipeline",
@@ -134,7 +230,22 @@
           "type": "jira",
           "key": "PLAT-1004"
         }
-      ]
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "gh run watch"
+          }
+        ]
+      },
+      "ui": {
+        "console": "/k8s/cluster/projects",
+        "instructions": [
+          "Open the Actions tab on your repository and watch the latest run.",
+          "Then check your namespace in the console for the deployed workload."
+        ]
+      }
     },
     {
       "id": "sign-off",
@@ -147,5 +258,6 @@
         }
       ]
     }
-  ]
+  ],
+  "x-console-label": "OpenShift console"
 }

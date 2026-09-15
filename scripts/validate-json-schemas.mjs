@@ -91,7 +91,15 @@ if (validateOnboarding) {
       for (const step of doc.steps) {
         if (seenStepIds.has(step.id)) fail(file, `duplicate step id: ${step.id}`)
         seenStepIds.add(step.id)
-        for (const action of step.actions ?? []) {
+
+        // Semantic, so the meta-schema can't express it: a command is by definition the CLI
+        // route, and one in the path-independent list would be shown to a reader who explicitly
+        // selected the UI route - the one thing that switch exists to prevent.
+        if ((step.actions ?? []).some((action) => action.type === 'command')) {
+          fail(file, `step "${step.id}": a command action belongs in \`cli.actions\`, not in the step's own \`actions\``)
+        }
+
+        for (const action of [...(step.actions ?? []), ...(step.cli?.actions ?? []), ...(step.ui?.actions ?? [])]) {
           if (action.type === 'config' && !pillIds.has(action.configId)) {
             missing.push(`${step.id} -> ${action.configId}`)
           }

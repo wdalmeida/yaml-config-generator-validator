@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { OnboardingWorkspace } from './OnboardingWorkspace'
 import { ONBOARDING_DEFINITIONS } from '../onboarding'
 
@@ -28,7 +28,11 @@ describe('OnboardingWorkspace', () => {
   it('renders one list item per step, with its title', () => {
     renderWorkspace()
 
-    expect(screen.getAllByRole('listitem')).toHaveLength(definition.steps.length)
+    // Scoped to the checklist: a step's instructions are an <ol> of their own, so a bare
+    // listitem query counts those too.
+    const checklist = document.querySelector('ol.checklist')!
+    expect(within(checklist as HTMLElement).getAllByRole('listitem').filter((li) => li.classList.contains('checklist-step')))
+      .toHaveLength(definition.steps.length)
     expect(screen.getByText(firstStep.title)).toBeInTheDocument()
   })
 
@@ -73,6 +77,112 @@ describe('OnboardingWorkspace', () => {
 
     renderWorkspace()
     expect(screen.getByRole('checkbox', { name: new RegExp(firstStep.title) })).toBeChecked()
+  })
+
+  describe('the CLI / UI switch', () => {
+    const cliStep = definition.steps.find((s) => s.cli && !s.ui)!
+    const uiStep = definition.steps.find((s) => s.ui && !s.cli)!
+    const bothStep = definition.steps.find((s) => s.cli && s.ui)!
+
+    it('opens on the command line route', () => {
+      renderWorkspace()
+      expect(screen.getByRole('radio', { name: 'Command line' })).toBeChecked()
+    })
+
+    it('shows only the selected route’s instructions', () => {
+      renderWorkspace()
+      expect(screen.getByText(bothStep.cli!.instructions[0])).toBeInTheDocument()
+      expect(screen.queryByText(bothStep.ui!.instructions[0])).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+
+      expect(screen.getByText(bothStep.ui!.instructions[0])).toBeInTheDocument()
+      expect(screen.queryByText(bothStep.cli!.instructions[0])).not.toBeInTheDocument()
+    })
+
+    it('hides a command from a reader who asked for the UI route', () => {
+      renderWorkspace()
+      expect(screen.getByRole('button', { name: /Copy install the toolchain/i })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+
+      expect(screen.queryByRole('button', { name: /Copy install the toolchain/i })).not.toBeInTheDocument()
+    })
+
+    it('says so rather than going blank when a step only documents the other route', () => {
+      renderWorkspace()
+
+      // cliStep has no UI route, so switching to UI should explain itself.
+      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+
+      const row = screen.getByText(cliStep.title).closest('li')!
+      expect(within(row).getByText(/Documented for the CLI route only/)).toBeInTheDocument()
+    })
+
+    it('does the same in the other direction', () => {
+      renderWorkspace()
+
+      const row = screen.getByText(uiStep.title).closest('li')!
+      expect(within(row).getByText(/Documented for the UI route only/)).toBeInTheDocument()
+    })
+
+    it('remembers the choice across a remount', () => {
+      const { unmount } = renderWorkspace()
+      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+      unmount()
+
+      renderWorkspace()
+      expect(screen.getByRole('radio', { name: 'OpenShift console' })).toBeChecked()
+    })
+  })
+
+  describe('the console link', () => {
+    const consoleStep = definition.steps.find((s) => s.ui?.console)!
+
+    function switchToUi() {
+      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+    }
+
+    it('shows the path as plain text while no base URL is set', () => {
+      renderWorkspace()
+      switchToUi()
+
+      const row = screen.getByText(consoleStep.title).closest('li')!
+      expect(within(row).queryByRole('link', { name: /Open in OpenShift console/ })).not.toBeInTheDocument()
+      expect(within(row).getByText(consoleStep.ui!.console!)).toBeInTheDocument()
+    })
+
+    it('becomes a real link once a base URL is typed', () => {
+      renderWorkspace()
+      switchToUi()
+
+      fireEvent.change(screen.getByLabelText('OpenShift console base URL'), {
+        target: { value: 'https://console.apps.acme.com/' },
+      })
+
+      const row = screen.getByText(consoleStep.title).closest('li')!
+      expect(within(row).getByRole('link', { name: /Open in OpenShift console/ })).toHaveAttribute(
+        'href',
+        `https://console.apps.acme.com${consoleStep.ui!.console}`,
+      )
+    })
+
+    it('renders no link for a javascript: base URL', () => {
+      renderWorkspace()
+      switchToUi()
+
+      fireEvent.change(screen.getByLabelText('OpenShift console base URL'), { target: { value: 'javascript:alert(1)' } })
+
+      expect(screen.queryByRole('link', { name: /Open in OpenShift console/ })).not.toBeInTheDocument()
+    })
+
+    it('explains that links open in a new tab, since a page cannot split the browser itself', () => {
+      renderWorkspace()
+      expect(screen.queryByText(/open in a new tab/)).not.toBeInTheDocument()
+
+      switchToUi()
+      expect(screen.getByText(/links open in a new tab/)).toBeInTheDocument()
+    })
   })
 
   describe('step actions', () => {

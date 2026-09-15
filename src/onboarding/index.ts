@@ -50,5 +50,13 @@ export function getOnboardingStatus(definition: OnboardingDefinition, state: Che
   return identified || ticked.size > 0 || state.tenant.trim() || state.product.trim() ? 'draft' : 'empty'
 }
 
-export type { ChecklistState, OnboardingAction, OnboardingDefinition, OnboardingStep } from './types'
-export { emptyChecklist, checklistSchema, requiredStepIds } from './types'
+export type {
+  ChecklistState,
+  OnboardingAction,
+  OnboardingDefinition,
+  OnboardingPathVariant,
+  OnboardingStep,
+  OnboardingUiPath,
+  StepPath,
+} from './types'
+export { emptyChecklist, checklistSchema, requiredStepIds, STEP_PATHS } from './types'

@@ -24,6 +24,31 @@ const actionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('config'), configId: z.string().min(1), label: z.string().min(1).optional() }),
 ])
 
+// A step usually has two ways to do it. They're kept as separate blocks rather than one mixed
+// action list because the user picks a lane up front (see the CLI/UI switch in
+// OnboardingWorkspace) and sees only that lane's instructions - mixing "run this command" and
+// "click this button" in one list is exactly what that switch exists to stop.
+// .strict() throughout this file, matching the meta-schema's `additionalProperties: false`:
+// these are hand-authored data files, so a typo'd or misplaced key is a mistake to report, not
+// an extra to quietly drop. (Zod's default - stripping - is right for parsing a config the user
+// pasted, which is why zodFromObjectProperties on the config side stays non-strict.)
+const pathVariantSchema = z
+  .object({
+    // An ordered sub-list: the actual clicks, or the actual sequence of commands. Rendered as
+    // an <ol> under the step title.
+    instructions: z.array(z.string().min(1)).default([]),
+    actions: z.array(actionSchema).default([]),
+  })
+  .strict()
+
+const uiPathSchema = pathVariantSchema
+  .extend({
+    // Appended to the console base URL the user types once (see consoleUrlFor). A path, not a
+    // full URL, so one checklist works against any cluster's console.
+    console: z.string().min(1).optional(),
+  })
+  .strict()
+
 const stepSchema = z.object({
   // Stable identifier: this is the value written into the checklist YAML, so renaming it
   // orphans a user's saved progress for that step.
@@ -33,8 +58,12 @@ const stepSchema = z.object({
   title: z.string().min(1),
   detail: z.string().min(1).optional(),
   optional: z.boolean().optional(),
+  // Path-independent: documentation and tickets are the same whichever lane you're in.
   actions: z.array(actionSchema).default([]),
+  cli: pathVariantSchema.optional(),
+  ui: uiPathSchema.optional(),
 })
+  .strict()
 
 export const onboardingFileSchema = z
   .object({
@@ -42,6 +71,9 @@ export const onboardingFileSchema = z
     title: z.string().min(1),
     'x-onboarding-id': z.string().min(1),
     intro: z.string().min(1).optional(),
+    // What this org calls its web console, e.g. "OpenShift console". One label for the whole
+    // checklist rather than a per-step one, since every ui.console path points at the same host.
+    'x-console-label': z.string().min(1).optional(),
     steps: z.array(stepSchema).min(1),
   })
   .superRefine((file, ctx) => {
@@ -51,10 +83,28 @@ export const onboardingFileSchema = z
         ctx.addIssue({ code: 'custom', message: `duplicate step id: ${step.id}`, path: ['steps'] })
       }
       seen.add(step.id)
+
+      // A command is by definition the CLI route, so one in the path-independent list would be
+      // shown to a reader who explicitly asked not to see commands - which is the one thing the
+      // CLI/UI switch exists to prevent.
+      if (step.actions.some((action) => action.type === 'command')) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `step "${step.id}": a command action belongs in \`cli.actions\`, not in the step's own \`actions\``,
+          path: ['steps'],
+        })
+      }
     }
   })
 
 export type OnboardingAction = z.infer<typeof actionSchema>
+export type OnboardingPathVariant = z.infer<typeof pathVariantSchema>
+export type OnboardingUiPath = z.infer<typeof uiPathSchema>
+
+// Which set of instructions a reader wants. Persisted, because it's a property of the person,
+// not of the checklist.
+export type StepPath = 'cli' | 'ui'
+export const STEP_PATHS: StepPath[] = ['cli', 'ui']
 export type OnboardingStep = z.infer<typeof stepSchema>
 export type OnboardingFile = z.infer<typeof onboardingFileSchema>
 
@@ -64,6 +114,7 @@ export interface OnboardingDefinition {
   id: string
   label: string
   intro?: string
+  consoleLabel: string
   steps: OnboardingStep[]
 }
 
@@ -72,6 +123,7 @@ export function onboardingDefinitionFromFile(file: OnboardingFile): OnboardingDe
     id: file['x-onboarding-id'],
     label: file.title,
     intro: file.intro,
+    consoleLabel: file['x-console-label'] ?? 'Console',
     steps: file.steps,
   }
 }

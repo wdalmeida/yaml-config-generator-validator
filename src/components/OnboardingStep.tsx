@@ -1,5 +1,5 @@
-import { jiraUrlFor } from '../onboarding/jira'
-import type { OnboardingAction, OnboardingStep as Step } from '../onboarding'
+import { consoleUrlFor, jiraUrlFor } from '../onboarding/links'
+import type { OnboardingAction, OnboardingStep as Step, OnboardingPathVariant, StepPath } from '../onboarding'
 import { DocsIcon, LinkIcon, TerminalIcon, TicketIcon } from './icons'
 
 interface OnboardingStepProps {
@@ -7,6 +7,11 @@ interface OnboardingStepProps {
   done: boolean
   onToggle: (done: boolean) => void
   jiraBaseUrl: string
+  consoleBaseUrl: string
+  consoleLabel: string
+  // Which lane of instructions to show. The other one is not rendered at all - that's the whole
+  // point of the switch, and a reader who picked "UI" shouldn't have to scroll past commands.
+  path: StepPath
   // Label for a `config` action's target pill, keyed by pill id. An action naming a pill
   // that no longer exists renders nothing rather than a dead button - forgiving at runtime
   // so deleting a schema file can't white-screen the app, while lint:schemas fails on it.
@@ -15,7 +20,24 @@ interface OnboardingStepProps {
 }
 
 // Fully controlled, no local state - same contract as FieldRow.
-export function OnboardingStep({ step, done, onToggle, jiraBaseUrl, pillLabels, onOpenConfig }: OnboardingStepProps) {
+export function OnboardingStep({
+  step,
+  done,
+  onToggle,
+  jiraBaseUrl,
+  consoleBaseUrl,
+  consoleLabel,
+  path,
+  pillLabels,
+  onOpenConfig,
+}: OnboardingStepProps) {
+  const variant: OnboardingPathVariant | undefined = path === 'cli' ? step.cli : step.ui
+  const consolePath = path === 'ui' ? step.ui?.console : undefined
+  const consoleHref = consolePath ? consoleUrlFor(consoleBaseUrl, consolePath) : null
+  // A step documented only for the other lane. Say so rather than rendering a step that looks
+  // like it needs nothing done to it.
+  const onlyOtherPath = !variant && Boolean(path === 'cli' ? step.ui : step.cli)
+
   function renderAction(action: OnboardingAction, index: number) {
     switch (action.type) {
       case 'docs':
@@ -84,8 +106,41 @@ export function OnboardingStep({ step, done, onToggle, jiraBaseUrl, pillLabels, 
         <input type="checkbox" checked={done} onChange={(e) => onToggle(e.target.checked)} />
         <span>{step.title}</span>
       </label>
+
       {step.detail && <p className="checklist-step-detail">{step.detail}</p>}
-      {step.actions.length > 0 && <div className="checklist-step-links">{step.actions.map(renderAction)}</div>}
+
+      <div className="checklist-step-body">
+        {step.actions.length > 0 && <div className="checklist-step-links">{step.actions.map(renderAction)}</div>}
+
+        {consolePath &&
+          (consoleHref ? (
+            <a className="step-link step-console" href={consoleHref} target="_blank" rel="noreferrer">
+              <LinkIcon />
+              Open in {consoleLabel}
+            </a>
+          ) : (
+            <span className="step-link step-link-inert">
+              <LinkIcon />
+              {consoleLabel} <code>{consolePath}</code>
+            </span>
+          ))}
+
+        {variant && variant.instructions.length > 0 && (
+          <ol className="step-instructions">
+            {variant.instructions.map((instruction, i) => (
+              <li key={i}>{instruction}</li>
+            ))}
+          </ol>
+        )}
+
+        {variant && variant.actions.length > 0 && <div className="checklist-step-links">{variant.actions.map(renderAction)}</div>}
+
+        {onlyOtherPath && (
+          <p className="step-other-path">
+            Documented for the {path === 'cli' ? 'UI' : 'CLI'} route only — switch above to see it.
+          </p>
+        )}
+      </div>
     </li>
   )
 }

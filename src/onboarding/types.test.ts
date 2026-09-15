@@ -48,12 +48,18 @@ describe('onboardingFileSchema', () => {
             { type: 'docs', url: 'https://example.com/docs' },
             { type: 'link', label: 'Portal', url: 'https://example.com' },
             { type: 'jira', key: 'PLAT-1001' },
-            { type: 'command', command: 'just ci' },
             { type: 'config', configId: 'tenant-config' },
           ],
+          cli: { actions: [{ type: 'command', command: 'just ci' }] },
         },
       ])
       expect(parsed.success).toBe(true)
+    })
+
+    it('rejects a command in the path-independent list, where a UI reader would still see it', () => {
+      const parsed = withSteps([{ id: 'a', title: 'A', actions: [{ type: 'command', command: 'just ci' }] }])
+      expect(parsed.success).toBe(false)
+      expect(!parsed.success && parsed.error.issues[0].message).toMatch(/belongs in `cli.actions`/)
     })
 
     it('rejects a non-http(s) url - these values reach an href', () => {
@@ -72,6 +78,35 @@ describe('onboardingFileSchema', () => {
       expect(withSteps([{ id: 'a', title: 'A', actions: [{ type: 'config' }] }]).success).toBe(false)
       expect(withSteps([{ id: 'a', title: 'A', actions: [{ type: 'nope' }] }]).success).toBe(false)
     })
+  })
+})
+
+describe('path variants', () => {
+  it('accepts a step documenting both routes', () => {
+    const parsed = withSteps([
+      {
+        id: 'a',
+        title: 'A',
+        cli: { instructions: ['Run it.'], actions: [{ type: 'command', command: 'just ci' }] },
+        ui: { console: '/k8s/cluster/projects', instructions: ['Click the thing.'] },
+      },
+    ])
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.steps[0].ui?.console).toBe('/k8s/cluster/projects')
+  })
+
+  it('defaults both instruction lists so a variant can be links only', () => {
+    const parsed = withSteps([{ id: 'a', title: 'A', cli: { actions: [{ type: 'command', command: 'x' }] } }])
+    expect(parsed.success && parsed.data.steps[0].cli?.instructions).toEqual([])
+  })
+
+  it('rejects a blank instruction', () => {
+    expect(withSteps([{ id: 'a', title: 'A', ui: { instructions: [''] } }]).success).toBe(false)
+  })
+
+  it('has no console path on the cli variant - that is a UI-route concept', () => {
+    const parsed = withSteps([{ id: 'a', title: 'A', cli: { console: '/nope' } }])
+    expect(parsed.success).toBe(false)
   })
 })
 

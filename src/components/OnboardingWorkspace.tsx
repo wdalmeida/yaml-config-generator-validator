@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { CONFIG_DEFINITIONS } from '../configs'
 import { KUBERNETES_DEFINITION } from '../kubernetes'
 import { usePersistedState } from '../lib/persisted-state'
-import { checklistKey, emptyChecklist, type ChecklistState, type OnboardingDefinition } from '../onboarding'
+import { checklistKey, emptyChecklist, type ChecklistState, type OnboardingDefinition, type StepPath } from '../onboarding'
 import { doneCount, isDone, toggleStep } from '../onboarding/checklist'
-import { DEFAULT_JIRA_BASE_URL } from '../onboarding/jira'
+import { DEFAULT_CONSOLE_BASE_URL, DEFAULT_JIRA_BASE_URL } from '../onboarding/links'
 import { describeSeedResults, seedConfigDrafts } from '../onboarding/seed'
 import { OnboardingStep } from './OnboardingStep'
 
@@ -20,8 +20,12 @@ interface OnboardingWorkspaceProps {
 // centred column, nothing competing with them for the reader's attention.
 export function OnboardingWorkspace({ definition, onOpenConfig, onSeeded }: OnboardingWorkspaceProps) {
   const [state, setState] = usePersistedState<ChecklistState>(checklistKey(definition), () => emptyChecklist())
-  // Per-user, not per-tenant, so it's its own key rather than part of the checklist state.
+  // Per-user, not per-tenant, so these are their own keys rather than part of the checklist
+  // state - two people onboarding the same tenant may well use different hosts, and the
+  // CLI/UI preference is a property of the person, not of the process.
   const [jiraBaseUrl, setJiraBaseUrl] = usePersistedState('jira-base-url', '')
+  const [consoleBaseUrl, setConsoleBaseUrl] = usePersistedState('console-base-url', '')
+  const [path, setPath] = usePersistedState<StepPath>('step-path', 'cli')
   const [seedMessages, setSeedMessages] = useState<string[] | null>(null)
 
   const pillLabels = Object.fromEntries(
@@ -78,13 +82,22 @@ export function OnboardingWorkspace({ definition, onOpenConfig, onSeeded }: Onbo
               onChange={(e) => setJiraBaseUrl(e.target.value)}
             />
           </div>
+          <div className="field-row">
+            <label htmlFor="onboarding-console">{definition.consoleLabel} base URL</label>
+            <input
+              id="onboarding-console"
+              value={consoleBaseUrl}
+              placeholder={DEFAULT_CONSOLE_BASE_URL}
+              onChange={(e) => setConsoleBaseUrl(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="onboarding-actions">
           <button type="button" disabled={!canSeed} onClick={handleSeed}>
             Seed config drafts
           </button>
-          <span className="github-hint">Set a Jira base URL to turn the ticket keys below into links.</span>
+          <span className="github-hint">Set the base URLs to turn the references below into links.</span>
         </div>
 
         <div className="seed-result" aria-live="polite">
@@ -103,6 +116,28 @@ export function OnboardingWorkspace({ definition, onOpenConfig, onSeeded }: Onbo
         </div>
         {definition.intro && <p className="checklist-intro">{definition.intro}</p>}
 
+        {/* A radiogroup rather than two toggle buttons: these are two views of the same thing,
+            exactly one is active, and a fieldset legend gives screen readers what the visual
+            segmented control conveys by grouping. */}
+        <fieldset className="path-switch">
+          <legend>How do you want to do these?</legend>
+          <label className={path === 'cli' ? 'active' : undefined}>
+            <input type="radio" name="step-path" value="cli" checked={path === 'cli'} onChange={() => setPath('cli')} />
+            Command line
+          </label>
+          <label className={path === 'ui' ? 'active' : undefined}>
+            <input type="radio" name="step-path" value="ui" checked={path === 'ui'} onChange={() => setPath('ui')} />
+            {definition.consoleLabel}
+          </label>
+        </fieldset>
+
+        {path === 'ui' && (
+          <p className="github-hint">
+            {definition.consoleLabel} links open in a new tab. To keep this checklist beside it,
+            split your browser window — or just drag the tab out into a second window.
+          </p>
+        )}
+
         <ol className="checklist">
           {definition.steps.map((step) => (
             <OnboardingStep
@@ -111,6 +146,9 @@ export function OnboardingWorkspace({ definition, onOpenConfig, onSeeded }: Onbo
               done={isDone(state, step.id)}
               onToggle={(next) => setState((prev) => toggleStep(definition, prev, step.id, next))}
               jiraBaseUrl={jiraBaseUrl}
+              consoleBaseUrl={consoleBaseUrl}
+              consoleLabel={definition.consoleLabel}
+              path={path}
               pillLabels={pillLabels}
               onOpenConfig={onOpenConfig}
             />

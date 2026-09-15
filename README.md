@@ -18,9 +18,11 @@ valid. Push it as a new file via a prefilled "create file" link, or update an ex
 The **Onboarding** pill is the front door and looks nothing like the rest: one centred column
 of imperative steps you tick off (ticked ones strike through and go green), each carrying
 whatever it takes to do it — docs, a website, a Jira ticket, a command to copy, or a jump
-straight to the pill that generates its output. The steps live in a JSON file, so the process
-is edited without touching the app. Type your tenant and product once there and one button
-seeds them into every pill that needs them.
+straight to the pill that generates its output. Every step is written twice — once for the
+terminal, once for the web console — and a switch at the top picks which one you see, so you
+never scroll past instructions for the route you didn't choose. The steps live in a JSON file,
+so the process is edited without touching the app. Type your tenant and product once there and
+one button seeds them into every pill that needs them.
 
 The **Kubernetes** pill is one of those outputs: a namespace, two service accounts, a Role, a
 RoleBinding and a token Secret each, all named from your tenant and product, rendered as one

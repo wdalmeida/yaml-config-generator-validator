@@ -410,6 +410,55 @@ textarea {
   margin-top: 0;
 }
 
+/* A segmented control built from real radios: exactly one is active, and the native inputs are
+   visually hidden rather than replaced, so keyboard and screen-reader behaviour is the browser's
+   rather than something re-implemented here. */
+.path-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-4) 0 var(--space-3);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.path-switch legend {
+  /* The visible grouping is the control's shape; the legend is for screen readers only. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.path-switch label {
+  padding: var(--space-1) var(--space-4);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.path-switch label.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Kept in the layout (not display:none) so it stays focusable and the focus ring has somewhere
+   to land; the label around it is what's actually clicked. */
+.path-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.path-switch:focus-within {
+  border-color: var(--accent);
+}
+
 .checklist-header {
   display: flex;
   align-items: baseline;
@@ -477,13 +526,44 @@ textarea {
   font-size: 0.85rem;
 }
 
+.checklist-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-left: 1.75rem;
+}
+
+/* The click-by-click or command-by-command sequence for whichever route is selected. Numbered,
+   because the order matters - unlike the link strip above it, which is a set of references. */
+.step-instructions {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.step-instructions li {
+  margin-bottom: var(--space-1);
+}
+
+.step-console {
+  align-self: flex-start;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.step-other-path {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
 .checklist-step-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding-left: 1.75rem;
 }
 
 .step-link {

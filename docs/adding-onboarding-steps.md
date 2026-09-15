@@ -30,6 +30,7 @@ page:
   "$schema": "./onboarding.meta.schema.json",
   "title": "Onboarding",
   "x-onboarding-id": "onboarding",
+  "x-console-label": "OpenShift console",
   "steps": [
     {
       "id": "raise-request",
@@ -47,6 +48,7 @@ page:
 | `title` | yes | The pill label. |
 | `x-onboarding-id` | yes | Stable id. Also the `localStorage` key suffix — **changing it orphans every user's saved progress**, and it must not collide with any pill's id. |
 | `intro` | no | One paragraph above the step list. |
+| `x-console-label` | no | What your org calls its web console, e.g. `OpenShift console`. Labels the UI half of the CLI/UI switch. Defaults to `Console`. |
 | `steps` | yes | At least one step, in the order the user should work through them. |
 
 ## Step keys
@@ -57,13 +59,20 @@ page:
 | `title` | yes | Write it in the **imperative mood** — "Commit config.yaml", not "Committing config.yaml" or "You should commit config.yaml". A step is an instruction. |
 | `detail` | no | One sentence of context under the title. |
 | `optional` | no | An optional step doesn't have to be ticked for the pill's dot to go green. |
-| `actions` | no | What the user needs in order to do the step — see below. Defaults to none. |
+| `actions` | no | Path-independent references — see **Actions** below. Defaults to none. |
+| `cli` | no | How to do the step from a terminal — see **Two routes** below. |
+| `ui` | no | How to do it in the web console. |
 
 ## Actions
 
-A step carries as many or as few actions as it needs. **Jira is one option among several, not
-a required field**: some steps are a doc to read, some a command to run, some a config file to
-fill in right here in the tool.
+A step's own `actions` are the **path-independent** references — documentation, tickets, a jump
+to another pill. They show whichever route the reader picked. **Jira is one option among
+several, not a required field.**
+
+> A `command` action must **not** go here. Commands are the CLI route by definition, and one in
+> this list would be shown to a reader who explicitly asked for the UI route — the single thing
+> the switch exists to prevent. Put it in `cli.actions`. Both `npm run lint:schemas` and the Zod
+> schema reject it.
 
 | `type` | Keys | Renders as |
 | --- | --- | --- |
@@ -92,6 +101,49 @@ Rules enforced for you:
   runtime an unresolvable one simply renders nothing, so deleting a schema file can never
   white-screen the app.
 
+## Two routes: `cli` and `ui`
+
+Most steps can be done either from a terminal or by clicking around a console. A reader picks
+one with the switch above the list, and **sees only that one** — so each route gets its own
+block, with an ordered sub-list of what to actually do:
+
+```json
+{
+  "id": "create-namespace",
+  "title": "Create your namespace and its RBAC",
+  "actions": [
+    { "type": "docs", "url": "https://example.com/docs/onboarding/namespace" },
+    { "type": "jira", "key": "PLAT-1006" }
+  ],
+  "cli": {
+    "instructions": [
+      "Open the Kubernetes pill, fill in your tenant and product, and hit Copy all.",
+      "Paste the manifests into the command below and press Ctrl-D."
+    ],
+    "actions": [{ "type": "command", "command": "kubectl apply -f -" }]
+  },
+  "ui": {
+    "console": "/k8s/cluster/projects",
+    "instructions": [
+      "Switch to the Administrator perspective.",
+      "Go to Home -> Projects and click Create Project.",
+      "Name it <tenant>-<product>, matching the Kubernetes pill exactly."
+    ]
+  }
+}
+```
+
+| Key | In | Meaning |
+| --- | --- | --- |
+| `instructions` | both | Ordered sub-list, rendered as a numbered `<ol>`. Write one clear action per entry. |
+| `actions` | both | Route-specific links or commands, shown under the instructions. |
+| `console` | `ui` only | A **path**, not a full URL — appended to the console base URL the reader types once, so one checklist works against any cluster. |
+
+A step may have one route, both, or neither. **Write both wherever both genuinely exist**: a
+step with only a `cli` block shows a small "Documented for the CLI route only" note to a reader
+on the UI route, which is honest but not useful. A step with neither (a "go ask someone" step)
+just shows its title and its shared actions, which is fine.
+
 ## The Jira base URL
 
 Ticket keys are stored in the checklist file, but the **host is not** — each user types their
@@ -117,13 +169,26 @@ Consequences worth knowing when you edit a file:
   and a revert doesn't destroy someone's ticks.
 - Progress is per-browser. It does not sync between machines and is not shared with anyone.
 
+## The console base URL
+
+Same shape as the Jira one, and the same reasoning: the console **host** is per-user (a
+different cluster per reader), so it's typed once and persisted under `console-base-url`, while
+each step carries only a path. Until a base URL is set, a step's `console` path renders as plain
+text rather than a broken link, and a non-`http(s)` value never becomes a link at all.
+
+Console links open in a **new tab**. There is no web API for split-screen — a page cannot put
+the browser into split view, that's a browser/OS feature the reader triggers themselves — so
+the UI route shows a one-line hint saying so rather than pretending otherwise.
+
 ## Things handled for you (don't hand-roll these)
 
 - **Status dot**: grey until anything is typed or ticked, amber while in progress, green once
   every non-`optional` step is ticked *and* tenant and product are both filled
   (`getOnboardingStatus` in `src/onboarding/index.ts`).
 - **Persistence**: progress saves to `localStorage` under `onboarding:<x-onboarding-id>` on
-  every change; nothing to wire up.
+  every change; nothing to wire up. The route preference and both base URLs are separate
+  per-user keys (`step-path`, `jira-base-url`, `console-base-url`), since they belong to the
+  reader rather than to the tenant being onboarded.
 - **Seeding**: the tenant/product typed here can be pushed into the other pills' drafts with
   one button. It only writes `text` and `select-or-text` fields named `tenant` or `product`,
   and it reports exactly which pills it touched — see `src/onboarding/seed.ts`.

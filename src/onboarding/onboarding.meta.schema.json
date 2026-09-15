@@ -172,10 +172,281 @@
                   }
                 }
               ]
-            }
+            },
+            "description": "Path-independent references (docs, tickets, a jump to another pill). A `command` action does NOT belong here - put it in cli.actions, or a reader on the UI route would still see it."
+          },
+          "cli": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "instructions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Ordered sub-list: the actual clicks, or the actual sequence of commands."
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "docs",
+                        "link",
+                        "jira",
+                        "command",
+                        "config"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$"
+                    },
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "configId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Id of the pill this step is about - a config type's x-config-id, or \"kubernetes\". Checked for real by scripts/validate-json-schemas.mjs."
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "docs"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "url"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "link"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "url",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "jira"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "key"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "command"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "command"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "config"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "configId"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "How to do this step from a terminal. Shown only while the CLI route is selected."
+          },
+          "ui": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "instructions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Ordered sub-list: the actual clicks, or the actual sequence of commands."
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "docs",
+                        "link",
+                        "jira",
+                        "command",
+                        "config"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https?://"
+                    },
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9]+-[0-9]+$"
+                    },
+                    "command": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "configId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Id of the pill this step is about - a config type's x-config-id, or \"kubernetes\". Checked for real by scripts/validate-json-schemas.mjs."
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "docs"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "url"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "link"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "url",
+                          "label"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "jira"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "key"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "command"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "command"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "type": {
+                            "const": "config"
+                          }
+                        }
+                      },
+                      "then": {
+                        "required": [
+                          "configId"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              "console": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Path appended to the console base URL the user types once, e.g. \"/k8s/cluster/projects\". A path, not a full URL, so one checklist works against any cluster."
+              }
+            },
+            "description": "How to do this step in the web console. Shown only while the UI route is selected."
           }
         }
       }
+    },
+    "x-console-label": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What this org calls its web console, e.g. \"OpenShift console\". Labels the UI side of the CLI/UI switch. Defaults to \"Console\"."
     }
   }
 }

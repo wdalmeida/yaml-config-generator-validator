@@ -5,6 +5,7 @@ import { emptyChecklist, type OnboardingDefinition } from './types'
 const definition: OnboardingDefinition = {
   id: 'test',
   label: 'Test',
+  consoleLabel: 'Console',
   steps: [
     { id: 'first', title: 'Do the first thing', actions: [] },
     { id: 'second', title: 'Do the second thing', actions: [] },
