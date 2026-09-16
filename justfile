@@ -362,14 +362,14 @@ links:
     npm run lint:links
 
 # ci.yml audit job
-# ci.yml helm job: lint the chart, then render it and check every manifest against the real
-# Kubernetes schemas. Rendering is what matters - helm lint alone would pass a Deployment with
-# a misspelled field. Each values file under charts/*/ci/ is rendered too, since the optional
-# templates (Ingress, HPA, PDB, NetworkPolicy) are off in the defaults.
+# ci.yml helm job: lint charts/, render them, and check every manifest.
 [group('ci')]
 helm: _out
     #!/usr/bin/env bash
     set -euo pipefail
+    # Rendering is what matters: helm lint alone would pass a Deployment with a misspelled
+    # field. Each values file under charts/*/ci/ is rendered too, since the optional
+    # templates (Ingress, HPA, PDB, NetworkPolicy) are off in the defaults.
     for chart in charts/*/; do
       helm lint "$chart"
       for values in "$chart"ci/*-values.yaml; do
@@ -396,6 +396,38 @@ helm: _out
         echo "kube-linter $(basename "$values"):"
         helm template release "$chart" --values "$values" | kube-linter lint -
       done
+    done
+
+# Manual: load-test the chart against a live cluster (see docs/helm-chart.md).
+[group('container')]
+loadtest *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Not part of `just ci` - it needs a cluster and several minutes. It also needs an image
+    # the cluster can pull: with kind that is `just image-build` plus
+    # `kind load image-archive .ci-out/image-docker.tar --name <cluster>`.
+    #
+    # No arguments runs the sweep behind the numbers in docs/helm-chart.md; arguments are
+    # passed straight through (label, cpu-request, cpu-limit|none, mem-limit, connections,
+    # seconds, path).
+    kubectl cluster-info >/dev/null 2>&1 || { echo "no reachable cluster - kubectl cluster-info fails" >&2; exit 1; }
+    if [ -n "{{args}}" ]; then
+      scripts/helm-loadtest.sh {{args}}
+      exit 0
+    fi
+    # The bundle is what every page load actually fetches, so it - not the 484-byte index -
+    # is the workload the memory floor has to survive.
+    asset="$(kubectl run loadtest-asset-$RANDOM --rm -i --restart=Never --quiet \
+      --image=docker.io/curlimages/curl:latest --command -- \
+      sh -c 'curl -fsS http://load-yaml-config-generator-validator.load/ | grep -o "assets/[^\"]*\.js" | head -1' 2>/dev/null | tr -d '\r' || true)"
+    asset="${asset:-}"
+    echo "== memory floor, 100 connections on ${asset:-/} =="
+    for m in 32Mi 64Mi 128Mi; do
+      scripts/helm-loadtest.sh "mem-$m" 10m none "$m" 100 15 "/${asset}"
+    done
+    echo "== cpu, 16 connections on ${asset:-/} =="
+    for c in none 250m 100m 50m 20m; do
+      scripts/helm-loadtest.sh "cpu-$c" 10m "$c" 128Mi 16 15 "/${asset}"
     done
 
 [group('ci')]

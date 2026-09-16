@@ -82,5 +82,6 @@ Reports land in `.ci-out/` — the same SARIF, SBOM and JSON artifacts the workf
 - [Deploying to GitHub Pages](docs/deploying-to-github-pages.md)
 - [Running as a container](docs/container.md) — two Buildah/OCI builds of the static site (Alpine and Red Hat Hardened Images), and the CI that builds, scans and publishes both
 - [Deploying with Helm](docs/helm-chart.md) — the chart under `charts/`, what it enforces on the pod, and the CI that renders and schema-checks it
+- [Capacity report](docs/capacity-report.md) — measured throughput, latency and memory limits from 1 to 1 000 concurrent connections
 - [Supply chain security](docs/supply-chain-security.md) — SBOM, attestations, SCA/SAST scanning
 - [Releasing](docs/releasing.md) — Conventional Commits, automated versioning/changelog/tags
