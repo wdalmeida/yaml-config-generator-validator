@@ -367,3 +367,275 @@ textarea {
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
+
+/* Onboarding is deliberately NOT the two-column .workspace grid: there's no file to render
+   beside it (a step's output is a config pill or the Kubernetes pill, each with its own YAML),
+   so the steps are the page. One centred column at a comfortable reading measure, which also
+   means no breakpoint of its own - it's already narrower than where .workspace collapses. */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.card-note {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.onboarding-details-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.onboarding-details-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.onboarding-actions .github-hint {
+  margin-top: 0;
+}
+
+/* A segmented control built from real radios: exactly one is active, and the native inputs are
+   visually hidden rather than replaced, so keyboard and screen-reader behaviour is the browser's
+   rather than something re-implemented here. */
+.path-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-4) 0 var(--space-3);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.path-switch legend {
+  /* The visible grouping is the control's shape; the legend is for screen readers only. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.path-switch label {
+  padding: var(--space-1) var(--space-4);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.path-switch label.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Kept in the layout (not display:none) so it stays focusable and the focus ring has somewhere
+   to land; the label around it is what's actually clicked. */
+.path-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.path-switch:focus-within {
+  border-color: var(--accent);
+}
+
+.checklist-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* An ordered list, because onboarding steps are imperative and sequential - the numbering is
+   part of the content, not decoration. */
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+}
+
+.checklist-intro,
+.checklist-progress {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: var(--space-2);
+}
+
+/* Divider on every row including the last, matching .card-flat. */
+.checklist-step {
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.checklist-step:last-child {
+  border-bottom: none;
+}
+
+.checklist-step-title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.checklist-step-title input {
+  margin-top: 0.15rem;
+  /* Ticked reads green without a second rule, and --success already flips in the dark block. */
+  accent-color: var(--success);
+  flex-shrink: 0;
+}
+
+/* Colour is never the only signal here - the strikethrough and the checkbox's own state both
+   carry "done" for anyone who can't distinguish the green. */
+.checklist-step.done .checklist-step-title span {
+  text-decoration: line-through;
+  color: var(--success);
+}
+
+.checklist-step.done .checklist-step-detail {
+  opacity: 0.7;
+}
+
+.checklist-step-detail {
+  margin-top: var(--space-1);
+  padding-left: 1.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.checklist-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-left: 1.75rem;
+}
+
+/* The click-by-click or command-by-command sequence for whichever route is selected. Numbered,
+   because the order matters - unlike the link strip above it, which is a set of references. */
+.step-instructions {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.step-instructions li {
+  margin-bottom: var(--space-1);
+}
+
+.step-console {
+  align-self: flex-start;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Marks a step that only documents one route, so a reader on the CLI route understands why
+   they're looking at console clicks (or vice versa) rather than assuming the switch broke. */
+.step-route-tag {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.checklist-step-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.step-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+/* A short prose block above the manifests, so the placeholder warning is on the page as well
+   as inside the YAML the user copies out. */
+.placeholder-warning {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.placeholder-warning strong {
+  color: var(--warn);
+}
+
+.resource-list {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* A Jira key with no usable base URL yet: the reference is still worth showing and copying, but
+   linking it would send the user to a domain nobody here controls. */
+.step-link-inert {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.step-command {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+}
+
+.step-command code {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.step-command button {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.8rem;
+}
+
+.seed-result {
+  margin-top: var(--space-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}

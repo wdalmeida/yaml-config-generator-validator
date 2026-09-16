@@ -1,17 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { ConfigDefinition } from '../configs'
 import { draftFromCandidate, emptyDraftFor, parseDraft } from '../configs'
-import {
-  buildCreateFileUrl,
-  buildEditFileUrl,
-  checkFileExists,
-  fetchFileContent,
-  inferRepoFromPagesUrl,
-  type FileExistsResult,
-} from '../lib/github'
-import { dataToYaml, parseYaml } from '../lib/yaml'
+import { fetchFileContent } from '../lib/github'
+import { dataToYaml, parseYaml, yamlIssueMessages } from '../lib/yaml'
 import { usePersistedState } from '../lib/persisted-state'
 import { FieldRow } from './fields/FieldRow'
+import { GithubPushLinks } from './GithubPushLinks'
+import { GithubTargetCard } from './GithubTargetCard'
+import { useGithubTarget } from './useGithubTarget'
 
 const YamlEditor = lazy(() => import('./YamlEditor'))
 
@@ -19,11 +15,6 @@ const YamlEditor = lazy(() => import('./YamlEditor'))
 // in sync with the form) or not (and therefore left the form untouched at its last-known-good
 // state). Independent of the separate Fetch-from-GitHub loading/error state below.
 type Feedback = { kind: 'valid' } | { kind: 'invalid'; messages: string[] }
-
-function issuesFor(parsed: ReturnType<typeof parseYaml>): string[] {
-  if (parsed.success) return []
-  return 'yamlError' in parsed ? [`YAML syntax error: ${parsed.yamlError}`] : parsed.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-}
 
 function deriveFromDraft(definition: ConfigDefinition, draft: Record<string, unknown>): { yamlText: string; feedback: Feedback } {
   const result = parseDraft(definition, draft)
@@ -36,21 +27,9 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
     emptyDraftFor(definition),
   )
 
-  // owner/repo/branch are shared across config types (same target repo). Served from GitHub
-  // Pages, the hosting repo is readable off the URL and is the repo these configs belong to,
-  // so owner/repo start filled in instead of blank - as a first value only, not a lock: it's
-  // still the persisted state, so editing either one sticks the way it always did.
-  const [owner, setOwner] = usePersistedState('github-owner', () => inferRepoFromPagesUrl(window.location.href)?.owner ?? '')
-  const [repo, setRepo] = usePersistedState('github-repo', () => inferRepoFromPagesUrl(window.location.href)?.repo ?? '')
-  const [branch, setBranch] = usePersistedState('github-branch', 'main')
   // Not editable and not persisted: our software looks for each config under one fixed name,
   // so letting anyone retarget it only produces a file the software never reads.
-  const path = definition.defaultFilename
-
-  const [checkState, setCheckState] = useState<'idle' | 'checking' | FileExistsResult>('idle')
-  // The location a check was last run for. Once the target fields change, the check is stale
-  // and we fall back to 'idle' during render rather than syncing state via an effect.
-  const [checkedKey, setCheckedKey] = useState<string | null>(null)
+  const target = useGithubTarget(definition.defaultFilename)
 
   const [{ yamlText, feedback }, setYamlState] = useState(() => deriveFromDraft(definition, draft))
   const [fetching, setFetching] = useState(false)
@@ -68,11 +47,7 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
     setYamlState(deriveFromDraft(definition, draft))
   }, [definition, draft])
 
-  const canFetch = Boolean(owner.trim() && repo.trim() && path.trim())
-  const canPush = feedback.kind === 'valid' && canFetch
-  const location = { owner: owner.trim(), repo: repo.trim(), branch: branch.trim() || 'main', path: path.trim() }
-  const locationKey = `${location.owner}|${location.repo}|${location.branch}|${location.path}`
-  const effectiveCheckState = checkedKey === locationKey ? checkState : 'idle'
+  const canPush = feedback.kind === 'valid' && target.canFetch
 
   function setField(key: string, value: unknown) {
     setDraft((prev) => ({ ...prev, [key]: value }))
@@ -83,7 +58,7 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
   function handleYamlTextChange(text: string) {
     const parsed = parseYaml(definition.schema, text)
     if (!parsed.success) {
-      setYamlState({ yamlText: text, feedback: { kind: 'invalid', messages: issuesFor(parsed) } })
+      setYamlState({ yamlText: text, feedback: { kind: 'invalid', messages: yamlIssueMessages(parsed) } })
       return
     }
     setDraft(draftFromCandidate(definition.fields, parsed.data as Record<string, unknown>))
@@ -91,10 +66,10 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
   }
 
   async function handleFetchFromGithub() {
-    if (!canFetch) return
+    if (!target.canFetch) return
     setFetching(true)
     setFetchError(null)
-    const fileResult = await fetchFileContent(location)
+    const fileResult = await fetchFileContent(target.location)
     setFetching(false)
     if (!fileResult.success) {
       setFetchError("Couldn't fetch that file (private repo, wrong path, or not found). Try pasting its contents instead.")
@@ -103,35 +78,10 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
     handleYamlTextChange(fileResult.content)
   }
 
-  async function handleCheck() {
-    if (!canPush) return
-    setCheckState('checking')
-    setCheckedKey(locationKey)
-    const status = await checkFileExists(location)
-    setCheckState(status)
-  }
-
-  // Copies the YAML before GitHub's editor opens in the new tab, so the user only has to
-  // select-all and paste there instead of also going back to hit "Copy YAML" first.
-  function handleOpenToUpdate() {
-    void navigator.clipboard.writeText(yamlText)
-  }
-
   return (
     <div className="workspace">
       <div className="panel workspace-left">
-        <section className="card">
-          <h2>Target file on GitHub</h2>
-          <div className="github-row">
-            <input value={owner} placeholder="owner" aria-label="owner" onChange={(e) => setOwner(e.target.value)} />
-            <input value={repo} placeholder="repo" aria-label="repo" onChange={(e) => setRepo(e.target.value)} />
-            <input value={branch} placeholder="branch" aria-label="branch" onChange={(e) => setBranch(e.target.value)} />
-            <p className="github-path">
-              <code>{path}</code>
-              <span>fixed filename — this is where our software looks for it</span>
-            </p>
-          </div>
-        </section>
+        <GithubTargetCard target={target} />
 
         {definition.fields.map((field) => (
           <section className="card-flat" key={field.key}>
@@ -144,7 +94,7 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
         <section className="yaml-panel">
           <div className="yaml-panel-header">
             <h2>YAML</h2>
-            <button type="button" disabled={!canFetch || fetching} onClick={handleFetchFromGithub}>
+            <button type="button" disabled={!target.canFetch || fetching} onClick={handleFetchFromGithub}>
               {fetching ? 'Fetching...' : 'Fetch from GitHub'}
             </button>
           </div>
@@ -179,55 +129,12 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
             <button type="button" disabled={feedback.kind !== 'valid'} onClick={() => navigator.clipboard.writeText(yamlText)}>
               Copy YAML
             </button>
-            <button type="button" disabled={!canPush || effectiveCheckState === 'checking'} onClick={handleCheck}>
-              {effectiveCheckState === 'checking' ? 'Checking...' : 'Push to GitHub'}
+            <button type="button" disabled={!canPush || target.checkState === 'checking'} onClick={target.runCheck}>
+              {target.checkState === 'checking' ? 'Checking...' : 'Push to GitHub'}
             </button>
           </div>
 
-          {effectiveCheckState === 'missing' && (
-            <p className="github-hint">
-              <a
-                className="github-link primary"
-                href={buildCreateFileUrl({ ...location, content: yamlText })}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Create file on GitHub
-              </a>
-            </p>
-          )}
-
-          {effectiveCheckState === 'exists' && (
-            <p className="github-hint">
-              This file already exists on that branch. GitHub can't prefill an update, so the
-              YAML has been copied to your clipboard — in the editor that opens, select all
-              (Cmd/Ctrl+A), paste (Cmd/Ctrl+V) to replace the contents, then commit.
-              <br />
-              <a className="github-link primary" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer" onClick={handleOpenToUpdate}>
-                Open file on GitHub to update
-              </a>
-            </p>
-          )}
-
-          {effectiveCheckState === 'unknown' && (
-            <p className="github-hint">
-              Couldn't confirm whether this file exists (private repo, or GitHub's API is
-              rate-limited). Use Create if it's new, or Update if it already exists — Update
-              copies the YAML to your clipboard first, since GitHub can't prefill an edit.
-              <br />
-              <a
-                className="github-link primary"
-                href={buildCreateFileUrl({ ...location, content: yamlText })}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Create file on GitHub
-              </a>{' '}
-              <a className="github-link" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer" onClick={handleOpenToUpdate}>
-                Open file on GitHub to update
-              </a>
-            </p>
-          )}
+          <GithubPushLinks state={target.checkState} location={target.location} content={yamlText} />
         </section>
       </div>
     </div>

@@ -27,6 +27,10 @@ export type FieldDescriptor =
       targets: { key: string; label: string; suffix: string }[]
     }
 
+// Which .status-dot class a type's saved work earns in the pill strip. Lives here rather
+// than in ./index.ts so src/onboarding can reuse it without importing the schema glob.
+export type DraftStatus = 'empty' | 'draft' | 'valid'
+
 export interface ConfigDefinition<T = Record<string, unknown>> {
   id: string
   label: string

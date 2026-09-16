@@ -1,0 +1,271 @@
+{
+  "$schema": "./onboarding.meta.schema.json",
+  "title": "Onboarding",
+  "x-onboarding-id": "onboarding",
+  "intro": "Work top to bottom. Tick each step as you finish it - your progress is saved in this browser. Steps that produce a file or a set of resources link straight to the pill that generates it.",
+  "steps": [
+    {
+      "id": "raise-request",
+      "title": "Raise the onboarding request ticket",
+      "detail": "One ticket per product. The platform team picks it up within two working days.",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/request"
+        },
+        {
+          "type": "jira",
+          "key": "PLAT-1001"
+        }
+      ],
+      "ui": {
+        "instructions": [
+          "Open your Jira project and pick the \"Platform onboarding\" request type.",
+          "Fill in the tenant and product names exactly as you will use them everywhere else.",
+          "Submit, and note the ticket key - the steps below reference it."
+        ]
+      },
+      "cli": {
+        "instructions": [
+          "Install Atlassian's own CLI (acli), or ankitpokhrel/jira-cli if you prefer it.",
+          "Confirm the exact flags against your Jira version - the subcommand names have changed across releases (Jira now calls issues \"work items\").",
+          "Note the key it prints; the steps below reference it."
+        ],
+        "actions": [
+          {
+            "type": "docs",
+            "label": "Atlassian CLI docs",
+            "url": "https://developer.atlassian.com/cloud/acli/"
+          },
+          {
+            "type": "command",
+            "label": "the acli call",
+            "command": "acli jira workitem create --project PLAT --type Task --summary \"Onboard <tenant>/<product>\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "request-repo-access",
+      "title": "Request write access to your product repository",
+      "detail": "You need this before any of the files below can be pushed.",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/access"
+        },
+        {
+          "type": "link",
+          "label": "Access portal",
+          "url": "https://example.com/portal"
+        },
+        {
+          "type": "jira",
+          "key": "PLAT-1002"
+        }
+      ],
+      "ui": {
+        "instructions": [
+          "Open the access portal and search for your product repository.",
+          "Request the Write role, naming the onboarding ticket as justification.",
+          "Wait for the approval mail before continuing."
+        ]
+      }
+    },
+    {
+      "id": "bootstrap-local",
+      "title": "Bootstrap your local checkout",
+      "detail": "Installs the toolchain and runs the same checks CI does.",
+      "actions": [],
+      "cli": {
+        "instructions": [
+          "Run these from the repository root."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "label": "Install the toolchain",
+            "command": "just install"
+          },
+          {
+            "type": "command",
+            "command": "just ci"
+          }
+        ]
+      }
+    },
+    {
+      "id": "create-namespace",
+      "title": "Create your namespace and its RBAC",
+      "detail": "Rendered from your tenant and product on the Kubernetes pill - copy it and kubectl apply it.",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/namespace"
+        },
+        {
+          "type": "config",
+          "configId": "kubernetes"
+        },
+        {
+          "type": "jira",
+          "key": "PLAT-1006"
+        }
+      ],
+      "cli": {
+        "instructions": [
+          "Open the Kubernetes pill, fill in your tenant and product, and hit Copy all.",
+          "Paste the manifests into the command below and press Ctrl-D."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "command": "kubectl apply -f -"
+          }
+        ]
+      },
+      "ui": {
+        "console": "/k8s/cluster/projects",
+        "instructions": [
+          "Switch to the Administrator perspective.",
+          "Go to Home -> Projects and click Create Project.",
+          "Name it <tenant>-<product>, matching the Kubernetes pill exactly.",
+          "Then go to User Management -> Roles to add the Role and RoleBinding."
+        ]
+      }
+    },
+    {
+      "id": "create-tenant-config",
+      "title": "Commit config.yaml for your tenant",
+      "detail": "Fill it in on the Tenant Config tab, then push it with the link there.",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/tenant-config"
+        },
+        {
+          "type": "config",
+          "configId": "tenant-config"
+        },
+        {
+          "type": "jira",
+          "key": "PLAT-1003"
+        }
+      ],
+      "cli": {
+        "instructions": [
+          "Fill the form on the Tenant Config pill, copy the YAML, then commit it."
+        ],
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add config.yaml && git commit -m \"feat: add tenant config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the form on the Tenant Config pill until the YAML panel says Valid.",
+          "Hit Push to GitHub and follow the create-or-update link it reveals.",
+          "Commit on the branch GitHub opens for you."
+        ]
+      }
+    },
+    {
+      "id": "create-ci",
+      "title": "Commit ci.yml for your product",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/ci"
+        },
+        {
+          "type": "config",
+          "configId": "ci"
+        }
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add ci.yml && git commit -m \"feat: add ci config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the CI pill, then use its Push to GitHub link."
+        ]
+      }
+    },
+    {
+      "id": "create-cd",
+      "title": "Commit cd.yml for your product",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/cd"
+        },
+        {
+          "type": "config",
+          "configId": "cd"
+        }
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "git add cd.yml && git commit -m \"feat: add cd config\" && git push"
+          }
+        ]
+      },
+      "ui": {
+        "instructions": [
+          "Fill the CD pill, then use its Push to GitHub link."
+        ]
+      }
+    },
+    {
+      "id": "verify-pipeline",
+      "title": "Verify the pipeline runs green end to end",
+      "detail": "Push a no-op commit and confirm build, test and deploy all pass.",
+      "actions": [
+        {
+          "type": "docs",
+          "url": "https://example.com/docs/onboarding/verify"
+        },
+        {
+          "type": "jira",
+          "key": "PLAT-1004"
+        }
+      ],
+      "cli": {
+        "actions": [
+          {
+            "type": "command",
+            "command": "gh run watch"
+          }
+        ]
+      },
+      "ui": {
+        "console": "/k8s/cluster/projects",
+        "instructions": [
+          "Open the Actions tab on your repository and watch the latest run.",
+          "Then check your namespace in the console for the deployed workload."
+        ]
+      }
+    },
+    {
+      "id": "sign-off",
+      "title": "Ask your platform contact to sign the onboarding off",
+      "optional": true,
+      "actions": [
+        {
+          "type": "jira",
+          "key": "PLAT-1005"
+        }
+      ]
+    }
+  ],
+  "x-console-label": "OpenShift console"
+}

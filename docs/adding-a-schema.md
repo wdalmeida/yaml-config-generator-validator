@@ -202,6 +202,11 @@ push-to-GitHub all working identically to every other type. Add `"foo"` to `DISP
 
 ## Checklist after editing a schema file
 
+Note that an onboarding step can name a config type by its `x-config-id` (a `config` action -
+see [Adding or updating onboarding steps](adding-onboarding-steps.md)), so renaming or
+removing an id can orphan one. `npm run lint:schemas` now fails on that rather than letting
+the step render a button that goes nowhere.
+
 ```sh
 npm run build   # tsc catches most structural mistakes early (missing required keys, etc.)
 npm test        # npx vitest run src/configs/json-schema.test.ts covers the converter itself;
