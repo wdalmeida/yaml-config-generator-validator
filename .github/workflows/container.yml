@@ -11,6 +11,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The scan jobs below carry dated acceptances (.trivyignore.yaml / osv-scanner.toml). Those
+  # expire on a date, but a date only means something if a run happens - and push/PR alone
+  # could leave an expired acceptance undetected for weeks on a quiet branch. A weekly build
+  # also catches a new CVE landing against an image whose inputs never changed.
+  schedule:
+    - cron: '17 5 * * 1'
 
 permissions:
   contents: read
@@ -248,6 +254,16 @@ jobs:
       security-events: write
       actions: read
     steps:
+      # Sparse: this job scans an artifact, not the repo, and the only thing it needs from
+      # the tree is the dated acceptance file. Fetching just that keeps the job's inputs
+      # honest - it still cannot accidentally scan working-tree sources instead of the image.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .trivyignore.yaml
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: container-image
@@ -294,6 +310,7 @@ jobs:
         run: |
           trivy image --input image-docker.tar \
             --scanners vuln,secret,misconfig \
+            --ignorefile .trivyignore.yaml \
             --format sarif --output trivy-results.sarif
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -310,12 +327,15 @@ jobs:
           sarif_file: trivy-results.sarif
           category: trivy
 
+      # --ignorefile is explicit because Trivy only auto-discovers the plain `.trivyignore`
+      # format, which has no expiry. Naming the .yaml file is what buys the dated acceptances.
       - name: Fail on fixable HIGH/CRITICAL findings
         run: |
           trivy image --input image-docker.tar \
             --scanners vuln,secret \
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
+            --ignorefile .trivyignore.yaml \
             --exit-code 1
 
   # Second, independent vulnerability pass: OSV-Scanner against the OSV.dev database, a
@@ -341,6 +361,16 @@ jobs:
       security-events: write
       actions: read
     steps:
+      # Sparse: this job scans an artifact, not the repo, and the only thing it needs from
+      # the tree is the dated acceptance file. Fetching just that keeps the job's inputs
+      # honest - it still cannot accidentally scan working-tree sources instead of the image.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            osv-scanner.toml
+          sparse-checkout-cone-mode: false
+
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: container-image
@@ -372,6 +402,7 @@ jobs:
       - name: OSV-Scanner (SARIF, for code scanning)
         run: |
           osv-scanner scan image --archive image-docker.tar \
+            --config osv-scanner.toml \
             --format sarif --output-file osv-results-container.sarif \
             --verbosity error || true
           test -s osv-results-container.sarif
@@ -398,6 +429,7 @@ jobs:
       - name: Fail on fixable HIGH/CRITICAL findings
         run: |
           osv-scanner scan image --archive image-docker.tar \
+            --config osv-scanner.toml \
             --format json --output-file osv-results-container.json \
             --verbosity error || true
           python3 - <<'EOF'

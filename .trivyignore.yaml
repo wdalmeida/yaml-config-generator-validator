@@ -1,0 +1,22 @@
+# Dated acceptances for Trivy. Empty, and it should stay that way unless something is genuinely
+# unfixable here.
+#
+# An entry belongs here only when the fix is outside this repo's control - almost always a CVE
+# in the Alpine base that lands before upstream rebuilds. Anything fixable by a dependency bump
+# gets bumped instead; see the npm `overrides` block in package.json for that pattern.
+#
+# Trivy does NOT auto-discover this file - only the plain `.trivyignore` format, which has no
+# expiry at all. container.yml passes this one explicitly with --ignorefile, which is the whole
+# point: an acceptance that silently outlived its reason is worse than no acceptance.
+#
+# Format (expired_at is mandatory by convention here, not by Trivy):
+#
+#   vulnerabilities:
+#     - id: CVE-0000-00000
+#       statement: >-
+#         What it is, why it can't be fixed here, and why it's tolerable meanwhile.
+#       expired_at: 2026-01-01
+#
+# Delete an entry when its cause is fixed rather than extending the date. An acceptance renewed
+# twice is a decision nobody is really making.
+vulnerabilities: []

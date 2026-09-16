@@ -1,0 +1,21 @@
+# Dated acceptances for OSV-Scanner. Empty, and it should stay that way unless something is
+# genuinely unfixable here.
+#
+# Passed explicitly with --config from container.yml. A future `ignoreUntil` removes the finding
+# from OSV-Scanner's JSON entirely, which is what lets the CVSS gate in that workflow keep
+# working unchanged; once the date passes the finding returns and the build fails again. That is
+# the intent - a deadline, not a dismissal.
+#
+# This file is NOT a copy of .trivyignore.yaml. The two engines name the same problem
+# differently: Trivy tends to report one CVE where OSV splits Alpine's advisories into several
+# ALPINE-CVE-* ids. An id added to one file does not cover the other.
+#
+# Format:
+#
+#   [[IgnoredVulns]]
+#   id = "ALPINE-CVE-0000-00000"
+#   ignoreUntil = 2026-01-01
+#   reason = "What it is, why it can't be fixed here, and what will fix it."
+#
+# OSV-Scanner reports entries that match nothing as "unused ignores", so a stale one announces
+# itself - delete it rather than extending the date.
