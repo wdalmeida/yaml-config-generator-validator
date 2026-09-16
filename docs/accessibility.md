@@ -147,6 +147,22 @@ If a future state genuinely cannot be given a shape, the answer is to add it to
 `CONTRASTIVE_SETS` in `App.colorblind.test.tsx` and fix the default palette until it passes —
 not to add a mode.
 
+### One focus ring, and why it sets no radius
+
+Everything focusable shares one `:focus-visible` rule — the pills, the text fields, the buttons,
+the links. `.theme-switch` is the single exception, and only because its radios are clipped out
+of sight: the ring has to go on the strip (`:focus-within`) rather than on an invisible input.
+
+The rule sets a colour and an offset and **deliberately no `border-radius`**. An outline already
+follows the element's own border curve, so one buys nothing — and on a blanket rule it *replaces*
+the element's radius for as long as it has focus. `.config-tab` is `border-radius: 999px`, so
+tabbing to a pill snapped it from a capsule to an 8px rounded rectangle: that reads as the layout
+glitching, not as a focus indicator. `App.layout.test.ts` asserts it stays out.
+
+The ring is `--accent-strong` rather than `--accent`, which matters here: a focus indicator is a
+non-text UI component and WCAG 1.4.11 asks 3:1 of it, and the brand orange is 2.99:1 on the page
+background — under the bar by a hair, on the one thing that should never be marginal.
+
 ## Scrolling and reflow
 
 `.yaml-panel` is a sticky flex column with `max-height: calc(100vh - 48px)`. It has to clip, and

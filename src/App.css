@@ -776,8 +776,14 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
+
+/* Deliberately NO border-radius here. An outline already follows the element's own border
+   curve, so setting one buys nothing - and setting it on a blanket :focus-visible rule
+   *overrides the element's own radius while it has focus*: the pill-shaped .config-tab
+   (border-radius: 999px) and .path-switch label snapped from a capsule to an 8px rounded
+   rectangle the moment they were tabbed to, which reads as the layout glitching rather than
+   as a focus indicator. App.layout.test.ts asserts it stays out. */
 
 /* Windows High Contrast Mode replaces the palette outright, and `outline` colours are among
    what it overrides - so the ring is re-stated in a system colour it will honour. */

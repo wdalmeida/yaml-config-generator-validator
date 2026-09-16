@@ -79,3 +79,33 @@ describe('inline code cannot widen the page', () => {
     expect(rule('.step-command')).toMatch(/min-width:\s*0\b/)
   })
 })
+
+describe('the focus indicator', () => {
+  // One ring for the whole app, on :focus-visible rather than :focus so it appears for keyboard
+  // and assistive-tech users without ringing every mouse click. The pills, the text fields and
+  // everything else share it; only .theme-switch adds its own, because its radios are clipped
+  // out of sight and the ring has to go on the strip instead of on the invisible input.
+  it('is a single :focus-visible rule the pills and the text fields both use', () => {
+    const body = rule(':focus-visible')
+    expect(body).toMatch(/outline:\s*2px solid var\(--accent-strong\)/)
+    expect(body).toMatch(/outline-offset:\s*2px/)
+  })
+
+  // The bug this guards: an outline already follows the element's own border curve, so a
+  // border-radius here buys nothing - and on a blanket rule it *replaces* the element's radius
+  // while focused. .config-tab is border-radius: 999px, so it snapped from a capsule to an 8px
+  // rounded rectangle on focus, which reads as the layout glitching, not as a focus ring.
+  it('does not restyle the shape of whatever has focus', () => {
+    expect(rule(':focus-visible')).not.toMatch(/border-radius/)
+  })
+
+  it('is re-stated in a system colour for forced-colors mode', () => {
+    // Windows High Contrast replaces the palette outright, including outline colours, so the
+    // ring has to name a colour that mode actually honours or it disappears entirely.
+    expect(css).toMatch(/@media \(forced-colors: active\)[\s\S]{0,200}outline:[^;]*Highlight/)
+  })
+
+  it('gives the theme switch its own ring, since its radios are visually clipped', () => {
+    expect(rule('.theme-switch:focus-within')).toMatch(/outline:\s*2px solid var\(--accent-strong\)/)
+  })
+})
