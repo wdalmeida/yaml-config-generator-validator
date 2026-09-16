@@ -199,6 +199,7 @@ load-bearing, easy to undo in good faith, and invisible to the other three tools
 | `service_test.yaml` | that the Service targets the container port **by name**, so the two cannot drift apart |
 | `serviceaccount_test.yaml` | the `create: false` fallback to `default`, which would otherwise leave pods unschedulable |
 | `optional_objects_test.yaml` | that Ingress/HPA/PDB/NetworkPolicy render nothing by default, and render the right thing when switched on |
+| `appversion_label_test.yaml` | that `Chart.AppVersion` is sanitised into a legal label value, in every form it can arrive in |
 | `ci_values_test.yaml` | that the `ci/*-values.yaml` fixtures still promise what their comments say |
 
 Two things worth knowing if you add to them:
@@ -213,10 +214,33 @@ Two things worth knowing if you add to them:
 
 They found one real bug on the first run: `app.kubernetes.io/version` was passed through from
 `Chart.AppVersion` unsanitised, although the comment beside it claimed otherwise. A label value
-admits only alphanumerics, `-`, `_` and `.`, while an appVersion may legally carry a `+`
-(semver build metadata) or a `:` (a digest pin) — and an invalid label makes the API server
-reject *every* object the chart renders, not just the label. The default `appVersion` is
-`latest`, so no ordinary render ever exercised it. It is sanitised now.
+admits only alphanumerics, `-`, `_` and `.`, must begin and end with an alphanumeric, and is
+capped at 63 characters. An appVersion is under no such constraint — semver build metadata
+carries a `+`, a digest pin carries a `:` — and an invalid label makes the API server reject
+*every* object the chart renders, not just the label, since the label is on all of them. The
+shipped `appVersion` is `latest`, so no ordinary render ever exercised it.
+
+`appversion_label_test.yaml` is the suite that proves the fix. It asserts **exact** values
+rather than a regex shape (a sanitiser that mangles a version into something wrong-but-valid
+would satisfy a pattern match and still be a bug) and pairs each one with Kubernetes' own
+label-value grammar, so every case proves both *the right string* and *a legal string*:
+
+| appVersion in | label out | why the case exists |
+|---|---|---|
+| `latest`, `1.4.2`, `2.0.0-rc.1` | unchanged | the controls — a helper that mangled everything would pass every case below |
+| `2.0.0+abc` | `2.0.0_abc` | semver build metadata |
+| `sha256:0123456789abcdef` | `sha256_0123456789abcdef` | a digest pin, the other illegal character |
+| `.leading.and.trailing.` | `leading.and.trailing` | substitution alone is not enough: `.` is legal *inside* a label value and illegal at either end |
+| a 90-character version | truncated to 63, still legal at the cut | truncating can leave a `.` last, which the trim then has to clean up |
+| `+++` | `""` | degenerate, but an empty label value is legal where `___` would not be |
+
+Plus two that cover the "*every* object" half of the claim: the Deployment carries the label
+twice (on itself and on the pod template, and the pod template's copy is the one that would
+block the pods rather than the rollout), and the four optional objects carry it too.
+
+Reintroducing the bug fails 7 of those 10 tests and leaves the 3 controls passing — while
+`helm lint`, kubeconform and kube-linter all stay green on the same broken chart. That is the
+argument for the suite in one run.
 
 helm-unittest is installed the way every other tool here is: the release tarball, extracted and
 checked against the release's own checksum file, rather than `helm plugin install` — which
