@@ -76,8 +76,18 @@ export function KubernetesWorkspace() {
             real cluster.
           </p>
 
-          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={result.success ? result.yaml : ''} />}>
+          <Suspense
+            fallback={
+              <textarea
+                className="yaml-editor-fallback"
+                aria-label="Rendered Kubernetes manifests"
+                readOnly
+                value={result.success ? result.yaml : ''}
+              />
+            }
+          >
             <YamlEditor
+              label="Rendered Kubernetes manifests"
               value={result.success ? result.yaml : ''}
               onChange={() => {}}
               readOnly

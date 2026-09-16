@@ -1,4 +1,5 @@
 import { buildCreateFileUrl, buildEditFileUrl, type FileExistsResult, type RepoFileLocation } from '../lib/github'
+import { ExternalLink } from './ExternalLink'
 
 interface GithubPushLinksProps {
   state: 'idle' | 'checking' | FileExistsResult
@@ -20,9 +21,9 @@ export function GithubPushLinks({ state, location, content }: GithubPushLinksPro
   if (state === 'missing') {
     return (
       <p className="github-hint">
-        <a className="github-link primary" href={buildCreateFileUrl({ ...location, content })} target="_blank" rel="noreferrer">
+        <ExternalLink className="github-link primary" href={buildCreateFileUrl({ ...location, content })}>
           Create file on GitHub
-        </a>
+        </ExternalLink>
       </p>
     )
   }
@@ -34,9 +35,9 @@ export function GithubPushLinks({ state, location, content }: GithubPushLinksPro
         YAML has been copied to your clipboard — in the editor that opens, select all
         (Cmd/Ctrl+A), paste (Cmd/Ctrl+V) to replace the contents, then commit.
         <br />
-        <a className="github-link primary" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer" onClick={handleOpenToUpdate}>
+        <ExternalLink className="github-link primary" href={buildEditFileUrl(location)} onClick={handleOpenToUpdate}>
           Open file on GitHub to update
-        </a>
+        </ExternalLink>
       </p>
     )
   }
@@ -48,12 +49,12 @@ export function GithubPushLinks({ state, location, content }: GithubPushLinksPro
         rate-limited). Use Create if it's new, or Update if it already exists — Update
         copies the YAML to your clipboard first, since GitHub can't prefill an edit.
         <br />
-        <a className="github-link primary" href={buildCreateFileUrl({ ...location, content })} target="_blank" rel="noreferrer">
+        <ExternalLink className="github-link primary" href={buildCreateFileUrl({ ...location, content })}>
           Create file on GitHub
-        </a>{' '}
-        <a className="github-link" href={buildEditFileUrl(location)} target="_blank" rel="noreferrer" onClick={handleOpenToUpdate}>
+        </ExternalLink>{' '}
+        <ExternalLink className="github-link" href={buildEditFileUrl(location)} onClick={handleOpenToUpdate}>
           Open file on GitHub to update
-        </a>
+        </ExternalLink>
       </p>
     )
   }

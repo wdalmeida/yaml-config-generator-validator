@@ -1,5 +1,7 @@
 import { consoleUrlFor, jiraUrlFor } from '../onboarding/links'
 import type { OnboardingAction, OnboardingStep as Step, OnboardingPathVariant, StepPath } from '../onboarding'
+import { CopyButton } from './CopyButton'
+import { ExternalLink } from './ExternalLink'
 import { DocsIcon, LinkIcon, TerminalIcon, TicketIcon } from './icons'
 
 interface OnboardingStepProps {
@@ -50,18 +52,18 @@ export function OnboardingStep({
     switch (action.type) {
       case 'docs':
         return (
-          <a key={index} className="step-link" href={action.url} target="_blank" rel="noreferrer">
+          <ExternalLink key={index} className="step-link" href={action.url}>
             <DocsIcon />
             {action.label ?? 'Docs'}
-          </a>
+          </ExternalLink>
         )
 
       case 'link':
         return (
-          <a key={index} className="step-link" href={action.url} target="_blank" rel="noreferrer">
+          <ExternalLink key={index} className="step-link" href={action.url}>
             <LinkIcon />
             {action.label}
-          </a>
+          </ExternalLink>
         )
 
       case 'jira': {
@@ -78,10 +80,10 @@ export function OnboardingStep({
           )
         }
         return (
-          <a key={index} className="step-link" href={href} target="_blank" rel="noreferrer">
+          <ExternalLink key={index} className="step-link" href={href}>
             <TicketIcon />
             Jira {label}
-          </a>
+          </ExternalLink>
         )
       }
 
@@ -90,9 +92,9 @@ export function OnboardingStep({
           <span key={index} className="step-command">
             <TerminalIcon />
             <code>{action.command}</code>
-            <button type="button" onClick={() => navigator.clipboard.writeText(action.command)}>
+            <CopyButton value={action.command} subject={action.label?.toLowerCase() ?? action.command}>
               Copy{action.label ? ` ${action.label.toLowerCase()}` : ''}
-            </button>
+            </CopyButton>
           </span>
         )
 
@@ -123,10 +125,10 @@ export function OnboardingStep({
 
         {consolePath &&
           (consoleHref ? (
-            <a className="step-link step-console" href={consoleHref} target="_blank" rel="noreferrer">
+            <ExternalLink className="step-link step-console" href={consoleHref}>
               <LinkIcon />
               Open in {consoleLabel}
-            </a>
+            </ExternalLink>
           ) : (
             <span className="step-link step-link-inert">
               <LinkIcon />

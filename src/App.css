@@ -1,15 +1,34 @@
-.app {
+:root {
+  /* Two borders, for the same reason there are two accents. --border is decoration: a card is
+     already told apart from the page by its own background and shadow, so the hairline round it
+     carries no information and can stay faint. --border-control is the edge of a text input or
+     a button, which inside a card sits on the very same background - there, the border IS what
+     says "this is a control", and WCAG 1.4.11 asks 3:1 of it. */
   --border: #d8d8dc;
+  --border-control: #8f8f9a;
   --muted: #6b7280;
   --surface: #fafaf9;
   --surface-raised: #ffffff;
   --error: #b91c1c;
-  --success: #15803d;
+  /* Teal, not green. Green against the amber below is the pairing that disappears with a
+     red-green deficiency - simulated for protanopia the old pair measured CIEDE2000 8.6, where
+     roughly 11 is the floor for "reliably tellable apart". Teal moves the difference onto the
+     blue axis, which protanopes and deuteranopes still see, and takes the pair to 12.1. The
+     shape of the status mark is what really carries the state (see components/icons.tsx); this
+     just stops the colour actively working against it. */
+  --success: #115e59;
   --warn: #b45309;
   --accent: #d97757;
   --accent-hover: #c4633f;
   --accent-soft: rgba(217, 119, 87, 0.12);
   --accent-contrast: #ffffff;
+  /* The brand orange at 3.1:1 against white is fine for a border or a dot (WCAG 1.4.11 asks
+     3:1 of a non-text element) and fails for text and for anything white sits on top of
+     (1.4.3 asks 4.5:1). So there are two: --accent stays the brand colour for lines and
+     fills that carry no text, and --accent-strong is the same hue and saturation walked down
+     in lightness until it passes, used wherever the colour has to be read. In dark mode the
+     brand orange already passes both ways, so the two are the same value there. */
+  --accent-strong: #c0502b;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
@@ -25,7 +44,9 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
+}
 
+.app {
   max-width: 1220px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-4) var(--space-12);
@@ -33,17 +54,22 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .app {
+  :root {
     --border: #3a3a40;
+    --border-control: #6c6c78;
     --surface: #1c1c1f;
     --surface-raised: #232326;
     --error: #f87171;
-    --success: #4ade80;
+    --success: #5eead4;
     --warn: #fbbf24;
     --accent: #e08863;
     --accent-hover: #eb9c7a;
     --accent-soft: rgba(224, 136, 99, 0.16);
     --accent-contrast: #1c1c1f;
+    --accent-strong: #e08863;
+    /* Was left at the light-mode #6b7280, which is 3.2:1 on the raised dark surface - the one
+       token the dark block forgot. Same hue and saturation, lifted until it passes. */
+    --muted: #9099ab;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -75,24 +101,24 @@
   font-weight: 600;
   border-color: transparent;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
-.status-dot {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--muted);
+/* The mark is an SVG whose shape says which state this is; the colour agrees with it rather
+   than carrying it alone. `display: flex` keeps the 12px glyph on the text's centre line. */
+.status-mark {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+  color: var(--muted);
 }
 
-.status-dot.status-draft {
-  background: var(--warn);
+.status-mark.status-draft {
+  color: var(--warn);
 }
 
-.status-dot.status-valid {
-  background: var(--success);
+.status-mark.status-valid {
+  color: var(--success);
 }
 
 .workspace {
@@ -221,7 +247,7 @@ button {
   cursor: pointer;
   font: inherit;
   padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   color: inherit;
@@ -236,7 +262,7 @@ input,
 select,
 textarea {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);
   color: inherit;
@@ -325,8 +351,8 @@ textarea {
 }
 
 .github-link.primary {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
   color: var(--accent-contrast);
 }
 
@@ -443,7 +469,7 @@ textarea {
 
 .path-switch label.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -456,7 +482,7 @@ textarea {
 }
 
 .path-switch:focus-within {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 
 .checklist-header {
@@ -550,7 +576,7 @@ textarea {
 .step-console {
   align-self: flex-start;
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* Marks a step that only documents one route, so a reader on the CLI route understands why
@@ -638,4 +664,86 @@ textarea {
   margin-top: var(--space-2);
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+
+/* ---------------------------------------------------------------------------------------- */
+/* Accessibility primitives. See docs/accessibility.md for what each one is answering.        */
+/* ---------------------------------------------------------------------------------------- */
+
+/* Text for assistive technology that must not take up space or be seen. Not `display: none`
+   and not `visibility: hidden` - both remove the element from the accessibility tree too,
+   which is the opposite of what this is for. The 1px clip-path box is the technique that
+   survives every screen reader still in use. `white-space: nowrap` stops a long string
+   wrapping into a 1px column and being announced one word per line by some of them. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible only while focused, which is the whole point: it is the first thing in the tab order
+   and nothing else should see it. It is NOT hidden with display/visibility off-focus - a
+   skip link has to stay focusable to be reachable at all, so it is moved off-screen instead. */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -100%;
+  z-index: 10;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+  text-decoration: none;
+  font-family: system-ui, sans-serif;
+}
+
+.skip-link:focus-visible {
+  top: var(--space-4);
+}
+
+/* One focus indicator for the whole app, on :focus-visible rather than :focus so it appears
+   for keyboard and assistive-tech users without ringing every mouse click. The browser default
+   was being relied on until now, which is legible on a white page and close to invisible on the
+   accent-coloured pill and the dark surfaces - this is the same ring everywhere, offset so it
+   reads against a filled background as well as an outlined one. */
+:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Windows High Contrast Mode replaces the palette outright, and `outline` colours are among
+   what it overrides - so the ring is re-stated in a system colour it will honour. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight;
+  }
+}
+
+/* A fieldset is the right element for a group of controls sharing one name (see FieldRow), but
+   its default border/padding/margin would redraw every list field as a boxed-in group. These
+   reset it to what the plain <div> looked like; the semantics are what was wanted, not the
+   chrome. */
+.field-group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Matched to `.field-row > label` above, so swapping a div+label for a fieldset+legend changed
+   the semantics and nothing about how the page looks. */
+.field-group > legend {
+  display: block;
+  padding: 0;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+  font-size: 0.9rem;
 }

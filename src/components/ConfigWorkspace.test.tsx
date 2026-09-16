@@ -199,7 +199,7 @@ describe('ConfigWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
-    expect(await screen.findByRole('link', { name: 'Create file on GitHub' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Create file on GitHub, opens in a new tab' })).toBeInTheDocument()
   })
 
   it('Push to GitHub offers Update for a file that already exists', async () => {
@@ -214,6 +214,8 @@ describe('ConfigWorkspace', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Push to GitHub' }))
 
-    expect(await screen.findByRole('link', { name: 'Open file on GitHub to update' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('link', { name: 'Open file on GitHub to update, opens in a new tab' }),
+    ).toBeInTheDocument()
   })
 })

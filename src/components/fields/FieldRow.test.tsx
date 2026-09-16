@@ -168,22 +168,32 @@ describe('FieldRow', () => {
       expect(onChange).toHaveBeenCalledWith(['a', 'b2'])
     })
 
+    // Every button's accessible name says what it acts on. Several list fields share one
+    // screen, so a page of buttons all called "Remove" is ambiguous to anyone navigating by
+    // control rather than by sight - hence the visually-hidden suffix, asserted here.
     it('Add appends a blank entry; Remove is disabled at exactly one entry', () => {
       const onChange = vi.fn()
       render(<FieldRow field={field} value={['a']} onChange={onChange} />)
-      expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Remove Proxy entries 1' })).toBeDisabled()
 
-      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add Proxy entries' }))
       expect(onChange).toHaveBeenCalledWith(['a', ''])
     })
 
     it('Remove drops the entry at that index once there is more than one', () => {
       const onChange = vi.fn()
       render(<FieldRow field={field} value={['a', 'b']} onChange={onChange} />)
-      const removeButtons = screen.getAllByRole('button', { name: 'Remove' })
-      expect(removeButtons[0]).not.toBeDisabled()
-      fireEvent.click(removeButtons[0])
+      const remove = screen.getByRole('button', { name: 'Remove Proxy entries 1' })
+      expect(remove).not.toBeDisabled()
+      fireEvent.click(remove)
       expect(onChange).toHaveBeenCalledWith(['b'])
+    })
+
+    // The number is what makes the name unique, so it has to track the row, not the render.
+    it('numbers each row so the inputs and Remove buttons are told apart', () => {
+      render(<FieldRow field={field} value={['a', 'b', 'c']} onChange={vi.fn()} />)
+      expect(screen.getByRole('textbox', { name: 'Proxy entries 2' })).toHaveValue('b')
+      expect(screen.getByRole('button', { name: 'Remove Proxy entries 3' })).toBeInTheDocument()
     })
   })
 
@@ -231,7 +241,7 @@ describe('FieldRow', () => {
       const onChange = vi.fn()
       const oneRow = [{ name: 'billing', description: 'Billing service' }]
       const { unmount } = render(<FieldRow field={field} value={oneRow} onChange={onChange} />)
-      expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Remove topic 1' })).toBeDisabled()
       unmount()
 
       const twoRows = [
@@ -239,8 +249,7 @@ describe('FieldRow', () => {
         { name: 'infra', description: 'Infra service' },
       ]
       render(<FieldRow field={field} value={twoRows} onChange={onChange} />)
-      const removeButtons = screen.getAllByRole('button', { name: 'Remove' })
-      fireEvent.click(removeButtons[0])
+      fireEvent.click(screen.getByRole('button', { name: 'Remove topic 1' }))
       expect(onChange).toHaveBeenCalledWith([{ name: 'infra', description: 'Infra service' }])
     })
   })
