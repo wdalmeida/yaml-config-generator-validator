@@ -80,6 +80,6 @@ Reports land in `.ci-out/` — the same SARIF, SBOM and JSON artifacts the workf
 - [Adding or updating onboarding steps](docs/adding-onboarding-steps.md) — the checklist file format and its action types
 - [Kubernetes resources](docs/kubernetes-resources.md) — what the Kubernetes pill renders, and what in it is still a placeholder
 - [Deploying to GitHub Pages](docs/deploying-to-github-pages.md)
-- [Running as a container](docs/container.md) — Buildah/OCI build of the static site, and the CI that builds, scans and publishes it
+- [Running as a container](docs/container.md) — two Buildah/OCI builds of the static site (Alpine and Red Hat Hardened Images), and the CI that builds, scans and publishes both
 - [Supply chain security](docs/supply-chain-security.md) — SBOM, attestations, SCA/SAST scanning
 - [Releasing](docs/releasing.md) — Conventional Commits, automated versioning/changelog/tags

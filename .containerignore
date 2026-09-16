@@ -29,7 +29,7 @@ gitleaks_*_checksums.txt
 .idea
 .vscode
 
-Containerfile
+Containerfile*
 .containerignore
 docs
 *.md

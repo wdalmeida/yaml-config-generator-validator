@@ -129,15 +129,15 @@
       "groupName": "devcontainer tools"
     },
     {
-      "description": "Batch the Containerfile's two digest-pinned base images (node builder, nginx-unprivileged runtime) into one weekly PR. Scoped by file: the devcontainer's base is a dockerfile-manager dep too, and gets its own rule below.",
+      "description": "Batch both Containerfiles' four digest-pinned base images (Containerfile: node builder + nginx-unprivileged runtime; Containerfile.redhat: hi/nodejs builder + hi/nginx runtime) into one weekly PR. The dockerfile manager's default file patterns already match Containerfile.redhat, but matchFileNames does not - it is an exact path list here, so a new Containerfile.* must be added to it or its bases fall through both of these rules. Scoped by file because the devcontainer's base is a dockerfile-manager dep too, and gets its own rule below.",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Containerfile"],
+      "matchFileNames": ["Containerfile", "Containerfile.redhat"],
       "groupName": "container base images"
     },
     {
-      "description": "Automerge base image digest-only re-pins once CI passes: the pinned version comment doesn't change, the registry just rebuilt the same tag. container.yml genuinely exercises the new base - it builds the image, smoke-tests it running (health endpoint, real page, non-root UID, security headers) and scans it with both Trivy and OSV-Scanner - so an automerged digest bump is a tested one. Version bumps (a new node or nginx release) still get a manual PR.",
+      "description": "Automerge base image digest-only re-pins once CI passes: the pinned version comment doesn't change, the registry just rebuilt the same tag. container.yml genuinely exercises the new base - it builds the image, smoke-tests it running (health endpoint, real page, non-root UID, security headers) and scans it with both Trivy and OSV-Scanner - so an automerged digest bump is a tested one. That holds for Containerfile.redhat's bases too, with one caveat worth remembering: neither scanner can currently read that image (see docs/container.md), so its digest bumps are proven by the build and smoke test rather than by a scan. Version bumps (a new node or nginx release) still get a manual PR.",
       "matchManagers": ["dockerfile"],
-      "matchFileNames": ["Containerfile"],
+      "matchFileNames": ["Containerfile", "Containerfile.redhat"],
       "matchUpdateTypes": ["digest"],
       "automerge": true
     },

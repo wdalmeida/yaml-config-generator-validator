@@ -424,20 +424,29 @@ semgrep: _out
 [group('container')]
 container: (_run "hadolint image-build image-smoke image-scan image-sca")
 
-# container.yml hadolint job: lint the Containerfile and the devcontainer's Dockerfile
+# container.yml hadolint job: lint both Containerfiles and the devcontainer's Dockerfile
 [group('container')]
 hadolint: _out
     #!/usr/bin/env bash
     set -uo pipefail
-    hadolint Containerfile .devcontainer/Dockerfile; status=$?
-    hadolint --format sarif Containerfile .devcontainer/Dockerfile > "{{out}}/hadolint-results.sarif" || true
+    files=(Containerfile Containerfile.redhat .devcontainer/Dockerfile)
+    hadolint "${files[@]}"; status=$?
+    hadolint --format sarif "${files[@]}" > "{{out}}/hadolint-results.sarif" || true
     exit $status
 
-# container.yml build job: build the image, then export the archives the scanners read
+# container.yml build job: build the image, then export the archives the scanners read.
+# `just image-build redhat` builds Containerfile.redhat instead (docs/container.md). Both
+# land on the same local tag and the same archives, so image-smoke/scan/sca read whichever
+# was built last - one variant at a time, as the workflow's matrix legs are.
 [group('container')]
-image-build: _out
+image-build variant="alpine": _out
     #!/usr/bin/env bash
     set -euo pipefail
+    case "{{variant}}" in
+      alpine) containerfile=Containerfile ;;
+      redhat) containerfile=Containerfile.redhat ;;
+      *) echo "unknown variant: {{variant}} (alpine redhat)" >&2; exit 1 ;;
+    esac
     # buildah on the runner, podman here - the Containerfile sticks to plain OCI instructions
     # precisely so both produce the same image (docs/container.md). The GHCR layer cache and
     # --pull=always are runner concerns and deliberately left out; the commit-derived
@@ -447,6 +456,7 @@ image-build: _out
     # the timestamps come from HEAD.
     epoch="$(git log -1 --format=%ct)"
     podman build \
+      --file "$containerfile" \
       --format oci \
       --timestamp "$epoch" \
       --layers \
@@ -466,11 +476,17 @@ image-build: _out
     podman save --format docker-archive -o "{{out}}/image-docker.tar" "{{image}}"
     SYFT_CHECK_FOR_APP_UPDATE=false syft scan "oci-archive:{{out}}/image.tar" -o cyclonedx-json > "{{out}}/image-sbom.cdx.json"
 
-# container.yml build job: run the image locked down and assert it actually serves the app
+# container.yml build job: run the image locked down and assert it actually serves the app.
+# Pass the variant you built - it only changes which UID is expected.
 [group('container')]
-image-smoke:
+image-smoke variant="alpine":
     #!/usr/bin/env bash
     set -euo pipefail
+    case "{{variant}}" in
+      alpine) expected_user=101:101 ;;
+      redhat) expected_user=65532:0 ;;
+      *) echo "unknown variant: {{variant}} (alpine redhat)" >&2; exit 1 ;;
+    esac
     trap 'podman logs smoke 2>&1 | tail -20 || true; podman rm -f smoke >/dev/null 2>&1 || true' EXIT
 
     podman rm -f smoke >/dev/null 2>&1 || true
@@ -495,8 +511,17 @@ image-smoke:
     if grep -qiE '^server: nginx/' <<<"$headers"; then
       echo "nginx version leaked in Server header" >&2; exit 1
     fi
-    test "$(podman exec smoke id -u)" = "101"
-    echo "smoke test passed"
+    # Not `podman exec smoke id -u`: the Red Hat runtime image is distroless, with no shell
+    # and no coreutils to exec. The declared identity comes from the image config, and podman
+    # top's `user` descriptor (read from the host) proves the live process isn't root - see
+    # the same pair in container.yml's smoke step for why it can't be one numeric check.
+    test "$(podman inspect smoke | jq -r '.[0].Config.User')" = "$expected_user"
+    top_users="$(podman top smoke user | tail -n +2 | sort -u)"
+    test -n "$top_users"
+    if grep -qxE 'root|0' <<<"$top_users"; then
+      echo "container process is running as root: $top_users" >&2; exit 1
+    fi
+    echo "smoke test passed ({{variant}}, user $expected_user)"
 
 # container.yml scan job: Trivy over the image (report, then the fixable HIGH/CRITICAL gate)
 [group('container')]
