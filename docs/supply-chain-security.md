@@ -48,7 +48,45 @@ setup:
 
 Run it locally before editing any workflow file: `uvx zizmor==1.29.0 .` (or
 `GH_TOKEN=$(gh auth token) uvx zizmor==1.29.0 .` to match CI's online mode, which resolves a
-few audits offline mode can't).
+few audits offline mode can't). `just zizmor` does both.
+
+### The job runs zizmor twice, and that is not redundancy
+
+`zizmor . --format=sarif` **exits 0 even when it has findings** — the SARIF file is its output,
+so the exit status stops carrying the verdict:
+
+```console
+$ zizmor .
+49 findings (47 suppressed): 0 informational, 2 low, 0 medium, 0 high
+$ echo $?
+12
+$ zizmor . --format=sarif > zizmor-results.sarif
+$ echo $?
+0
+```
+
+The job used to run only the SARIF form, with `continue-on-error: true` and a `Fail if zizmor
+found issues` step gated on its `outcome`. That gate could never fire, and two real
+`self-repository` findings had been sitting unreported behind it. It now runs the plain form as
+the gate and the SARIF form with `if: always()` as the report — the same shape the `test` job's
+oxlint steps always had.
+
+**Check this before giving another tool the same treatment.** The other three are fine:
+markdownlint, gitleaks and kube-linter all keep a non-zero exit in SARIF mode, so one run
+serves as both report and gate. `just <tool>` reads the plain form's status, so if the two ever
+diverge again it shows up as the local recipe being stricter than CI — which is how this one was
+found.
+
+### One suppressed zizmor finding
+
+`supply-chain.yml`'s two `uses: ./.github/workflows/osv-scan.yml` lines carry
+`# zizmor: ignore[self-repository]`. zizmor wants GitHub's self-repository form,
+`$/.github/workflows/...`, announced 2026-07-30 — and it *is* the clearer spelling. But
+actionlint rejects it outright (*"not following the format `owner/repo/path/to/workflow.yml@ref`
+nor `./path/to/workflow.yml`"*), and 1.7.12 is its latest release, published four months before
+GitHub announced the syntax. There is no pair of versions that accepts the same string, so this
+stays on the `./` form, which GitHub still supports. Drop the suppression once actionlint ships
+`$/` support. The findings stay visible in zizmor's output as *ignored* rather than disappearing.
 
 ## A second GitHub Actions scanner (`plumber`)
 

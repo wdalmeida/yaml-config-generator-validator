@@ -105,7 +105,13 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: ./.github/workflows/osv-scan.yml
+    # GitHub's self-repository form ($/.github/workflows/...) is what zizmor wants here, and
+    # it is the clearer spelling - but actionlint rejects it outright ("not following the
+    # format ... nor ./path/to/workflow.yml"), and 1.7.12 is its latest release, published
+    # four months before GitHub announced the syntax. There is no version of the two tools
+    # that accepts the same string, so this stays on the ./ form, which GitHub still supports
+    # and which actionlint understands. Drop this suppression once actionlint ships $/ support.
+    uses: ./.github/workflows/osv-scan.yml # zizmor: ignore[self-repository]
     with:
       download-sbom-artifact: true
       # --sbom was deprecated by osv-scanner in favor of --lockfile (which auto-detects SBOM
@@ -120,7 +126,13 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    uses: ./.github/workflows/osv-scan.yml
+    # GitHub's self-repository form ($/.github/workflows/...) is what zizmor wants here, and
+    # it is the clearer spelling - but actionlint rejects it outright ("not following the
+    # format ... nor ./path/to/workflow.yml"), and 1.7.12 is its latest release, published
+    # four months before GitHub announced the syntax. There is no version of the two tools
+    # that accepts the same string, so this stays on the ./ form, which GitHub still supports
+    # and which actionlint understands. Drop this suppression once actionlint ships $/ support.
+    uses: ./.github/workflows/osv-scan.yml # zizmor: ignore[self-repository]
     with:
       # node_modules/dist are excluded explicitly (not just relying on osv-scanner's default
       # .gitignore-aware skipping) so this stays correct even if a vendored dependency ships its
