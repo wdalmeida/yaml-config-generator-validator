@@ -1,56 +1,21 @@
-# Timed acceptances for OSV-Scanner, expiring 2026-09-23.
+# Dated acceptances for OSV-Scanner. Empty, and it should stay that way unless something is
+# genuinely unfixable here.
 #
-# Passed explicitly with --config from container.yml. A future `ignoreUntil` removes the
-# finding from OSV-Scanner's JSON entirely, which is what lets the CVSS gate in that workflow
-# keep working unchanged; once the date passes, the finding comes back and the build fails
-# again. That is the intent - this is a deadline, not a dismissal.
+# Passed explicitly with --config from container.yml. A future `ignoreUntil` removes the finding
+# from OSV-Scanner's JSON entirely, which is what lets the CVSS gate in that workflow keep
+# working unchanged; once the date passes the finding returns and the build fails again. That is
+# the intent - a deadline, not a dismissal.
 #
-# OSV reports the Alpine openssl advisories individually under ALPINE-CVE-* ids, so the same
-# base-image problem Trivy reports as one CVE appears here as nine. All nine are the same
-# package at the same version (openssl 3.5.7-r0, fixed in 3.5.8-r0) and all nine disappear
-# together when the base image is bumped. Two are CVSS >= 9.0 - see the PR discussion.
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-14456"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-14457"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-18798"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-54874"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-63072"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-63073"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 9.8 - the highest here). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-63075"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-63076"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 7.5). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
-
-[[IgnoredVulns]]
-id = "ALPINE-CVE-2026-75803"
-ignoreUntil = 2026-09-23
-reason = "openssl 3.5.7-r0 in the pinned base image (CVSS 9.1). Fixed in 3.5.8-r0; awaiting an upstream nginx-unprivileged rebuild."
+# This file is NOT a copy of .trivyignore.yaml. The two engines name the same problem
+# differently: Trivy tends to report one CVE where OSV splits Alpine's advisories into several
+# ALPINE-CVE-* ids. An id added to one file does not cover the other.
+#
+# Format:
+#
+#   [[IgnoredVulns]]
+#   id = "ALPINE-CVE-0000-00000"
+#   ignoreUntil = 2026-01-01
+#   reason = "What it is, why it can't be fixed here, and what will fix it."
+#
+# OSV-Scanner reports entries that match nothing as "unused ignores", so a stale one announces
+# itself - delete it rather than extending the date.

@@ -205,11 +205,16 @@ Three things about this are easy to get wrong:
   CVSS≥7.0 gate in that job keep working unchanged. It also prints an "unused ignores" list,
   so an entry that has outlived its finding announces itself rather than lingering.
 
-The same base-image problem does not look the same to both tools. Trivy reports the current
-openssl situation as one CVE; OSV splits Alpine's openssl advisories into nine `ALPINE-CVE-*`
-ids. They are the same package at the same version, they are fixed by the same bump, and they
-disappear together — but the two files are not copies of each other, and adding an id to one
-does not cover the other.
+**Both files ship empty, and should stay that way.** An entry belongs in them only when the fix
+is genuinely outside this repo's control; anything a dependency bump can fix gets bumped
+instead (see the `overrides` block in `package.json` for that pattern). Each file carries the
+format as a comment so an entry can be added without looking it up.
+
+The same base-image problem does not look the same to both tools, which is why there are two
+files rather than one. Trivy tends to report a base-image issue as a single CVE where OSV
+splits Alpine's advisories for the same package into several `ALPINE-CVE-*` ids — during the
+openssl episode that prompted this, one CVE in Trivy was nine ids in OSV. Adding an id to one
+file does not cover the other.
 
 `container.yml` also runs **weekly on a schedule**, not only on push and PR. An expiry date is
 only meaningful if something runs to notice it; without the cron, an acceptance could outlive

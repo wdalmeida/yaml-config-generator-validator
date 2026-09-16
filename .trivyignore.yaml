@@ -1,18 +1,22 @@
-# Timed acceptances for Trivy, expiring 2026-09-23.
+# Dated acceptances for Trivy. Empty, and it should stay that way unless something is genuinely
+# unfixable here.
+#
+# An entry belongs here only when the fix is outside this repo's control - almost always a CVE
+# in the Alpine base that lands before upstream rebuilds. Anything fixable by a dependency bump
+# gets bumped instead; see the npm `overrides` block in package.json for that pattern.
 #
 # Trivy does NOT auto-discover this file - only the plain `.trivyignore` format, which has no
-# expiry. container.yml passes it explicitly with --ignorefile, which is the whole point:
-# an acceptance that silently outlived its reason would be worse than no acceptance at all.
+# expiry at all. container.yml passes this one explicitly with --ignorefile, which is the whole
+# point: an acceptance that silently outlived its reason is worse than no acceptance.
 #
-# Everything here is a stopgap for a base-image bump we do not control. When
-# nginx-unprivileged ships an Alpine with openssl >= 3.5.8-r0, Renovate re-pins the digest,
-# these entries stop matching, and the file should be emptied rather than extended.
-vulnerabilities:
-  - id: CVE-2026-14456
-    statement: >-
-      openssl DoS via unbounded memory growth in the QUIC server path. Present in the pinned
-      nginx-unprivileged base (libcrypto3/libssl3 3.5.7-r0, fixed 3.5.8-r0); no local fix
-      exists until upstream rebuilds. This image serves static files over HTTP/1.1 and does
-      not enable QUIC or HTTP/3, so the affected code path is not reachable as configured.
-      Accepted for 7 days pending the base-image bump.
-    expired_at: 2026-09-23
+# Format (expired_at is mandatory by convention here, not by Trivy):
+#
+#   vulnerabilities:
+#     - id: CVE-0000-00000
+#       statement: >-
+#         What it is, why it can't be fixed here, and why it's tolerable meanwhile.
+#       expired_at: 2026-01-01
+#
+# Delete an entry when its cause is fixed rather than extending the date. An acceptance renewed
+# twice is a decision nobody is really making.
+vulnerabilities: []
