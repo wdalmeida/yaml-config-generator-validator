@@ -1,0 +1,68 @@
+# The ci/*-values.yaml fixtures exist so kubeconform and kube-linter see the optional
+# templates switched on. They are also the chart's worked examples, so what each one promises
+# is worth asserting - particularly both-limits, which carries a measured answer rather than
+# a shape.
+suite: ci values fixtures
+release:
+  name: release
+tests:
+  - it: everything-values turns on the three that compose
+    templates:
+      - ingress.yaml
+      - poddisruptionbudget.yaml
+      - networkpolicy.yaml
+    values:
+      - ../ci/everything-values.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  # Autoscaling is the deliberately excluded fourth: it contradicts this file's
+  # replicaCount: 3, which is why it has a fixture of its own. Between the two, all four
+  # optional templates are rendered by CI - assert the split rather than assume it.
+  - it: everything-values leaves autoscaling to the other fixture
+    templates:
+      - hpa.yaml
+    values:
+      - ../ci/everything-values.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: autoscaling-values renders the HPA the other fixture does not
+    templates:
+      - hpa.yaml
+    values:
+      - ../ci/autoscaling-values.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.maxReplicas
+          value: 8
+
+  - it: autoscaling-values leaves the Deployment's replica count to the HPA
+    templates:
+      - deployment.yaml
+    values:
+      - ../ci/autoscaling-values.yaml
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  # For platforms that mandate both limits. 500m/256Mi is the measured setting at 1 000
+  # concurrent connections: 500m -> 1000m buys only 23% more throughput, and the higher CPU
+  # limit is what triggered the OOMKill (4 runs in 5 at 128Mi) because a faster pod holds
+  # more responses in flight. The two dials are not independent - see docs/capacity-report.md.
+  - it: both-limits carries the measured CPU and memory limits
+    templates:
+      - deployment.yaml
+    values:
+      - ../ci/both-limits-values.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 256Mi

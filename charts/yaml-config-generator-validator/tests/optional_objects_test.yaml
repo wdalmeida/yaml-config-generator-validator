@@ -1,0 +1,249 @@
+# Ingress, HPA, PDB and NetworkPolicy are all off in the defaults. That is the whole reason
+# charts/*/ci/*-values.yaml exists for kubeconform and kube-linter - and the reason these
+# tests assert the off state too, since "renders nothing" is itself a promise: a chart that
+# starts emitting an Ingress on upgrade would publish the site to the internet.
+suite: optional objects
+release:
+  name: release
+tests:
+  - it: renders none of them by default
+    templates:
+      - ingress.yaml
+      - hpa.yaml
+      - poddisruptionbudget.yaml
+      - networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- Ingress ---
+
+  - it: renders an Ingress with a backend pointing at the Service port
+    templates:
+      - ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: chart-example.local
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: release-yaml-config-generator-validator
+      # The Service port (80), never the container port (8080) - an Ingress backend addresses
+      # the Service.
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 80
+
+  - it: omits ingressClassName and tls when unset
+    templates:
+      - ingress.yaml
+    set:
+      ingress.enabled: true
+    asserts:
+      - notExists:
+          path: spec.ingressClassName
+      - notExists:
+          path: spec.tls
+
+  - it: carries tls and multiple hosts
+    templates:
+      - ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: ycgv.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+        - host: tools.example.com
+          paths:
+            - path: /yaml
+              pathType: Prefix
+      ingress.tls:
+        - secretName: ycgv-tls
+          hosts:
+            - ycgv.example.com
+    asserts:
+      - lengthEqual:
+          path: spec.rules
+          count: 2
+      - equal:
+          path: spec.rules[1].http.paths[0].path
+          value: /yaml
+      - equal:
+          path: spec.tls[0].secretName
+          value: ycgv-tls
+
+  # --- HPA ---
+
+  - it: renders an HPA targeting this Deployment, CPU only by default
+    templates:
+      - hpa.yaml
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+      - equal:
+          path: spec.scaleTargetRef.name
+          value: release-yaml-config-generator-validator
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 6
+      - lengthEqual:
+          path: spec.metrics
+          count: 1
+      - equal:
+          path: spec.metrics[0].resource.name
+          value: cpu
+      - equal:
+          path: spec.metrics[0].resource.target.averageUtilization
+          value: 80
+
+  # Memory is commented out in values.yaml rather than set to null, so this is the assertion
+  # that the second metric appears at all when someone uncomments it.
+  - it: adds the memory metric when one is set
+    templates:
+      - hpa.yaml
+    set:
+      autoscaling.enabled: true
+      autoscaling.targetMemoryUtilizationPercentage: 75
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 2
+      - equal:
+          path: spec.metrics[1].resource.name
+          value: memory
+      - equal:
+          path: spec.metrics[1].resource.target.averageUtilization
+          value: 75
+
+  # A CPU-utilisation HPA divides by the CPU *request*, so a chart with no CPU request would
+  # give the autoscaler nothing to compute against and it would never scale.
+  - it: has a CPU request for the autoscaler to measure against
+    templates:
+      - deployment.yaml
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - exists:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+
+  # --- PodDisruptionBudget ---
+
+  - it: renders a PDB that cannot deadlock a node drain
+    templates:
+      - poddisruptionbudget.yaml
+    set:
+      podDisruptionBudget.enabled: true
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      # Without this, a rollout whose pods all fail readiness holds a drain open forever: the
+      # pods are unhealthy, so the budget is never satisfied, so nothing may be evicted.
+      # kube-linter caught this one for real; the test is what keeps it caught.
+      - equal:
+          path: spec.unhealthyPodEvictionPolicy
+          value: AlwaysAllow
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: yaml-config-generator-validator
+            app.kubernetes.io/instance: release
+
+  # The documented escape hatch for clusters older than 1.27, where the field does not exist
+  # and its presence is rejected outright.
+  - it: omits unhealthyPodEvictionPolicy when blanked
+    templates:
+      - poddisruptionbudget.yaml
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.unhealthyPodEvictionPolicy: ""
+    asserts:
+      - notExists:
+          path: spec.unhealthyPodEvictionPolicy
+
+  - it: takes maxUnavailable instead when given one
+    templates:
+      - poddisruptionbudget.yaml
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: null
+      podDisruptionBudget.maxUnavailable: 1
+    asserts:
+      - notExists:
+          path: spec.minAvailable
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  # --- NetworkPolicy ---
+
+  - it: renders a policy that allows the container port in and nothing out
+    templates:
+      - networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec.policyTypes
+          value:
+            - Ingress
+            - Egress
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+      # Empty `from` means "from anywhere", which is what an ingress controller in an
+      # arbitrary namespace needs until the user narrows it.
+      - notExists:
+          path: spec.ingress[0].from
+      # An empty egress list alongside Egress in policyTypes is a deny-all. Removing the key
+      # entirely would mean the same thing to Kubernetes but not to a reader, and a `with`
+      # guard added around it later would turn it into a silent allow-all if policyTypes were
+      # ever edited alongside it.
+      - equal:
+          path: spec.egress
+          value: []
+
+  - it: narrows ingress to a named namespace when asked
+    templates:
+      - networkpolicy.yaml
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingressFrom:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+    asserts:
+      - equal:
+          path: spec.ingress[0].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ingress-nginx
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080

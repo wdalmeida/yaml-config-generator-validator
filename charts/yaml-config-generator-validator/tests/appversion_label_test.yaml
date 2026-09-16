@@ -1,0 +1,174 @@
+# app.kubernetes.io/version comes straight from Chart.AppVersion, and the two are held to
+# different rules. A label value admits only alphanumerics, "-", "_" and ".", must start and
+# end with an alphanumeric, and is capped at 63 characters. An appVersion is under no such
+# constraint: semver build metadata carries a "+", a digest pin carries a ":", and either one
+# makes the API server reject the object outright - every object the chart renders, since the
+# label is on all of them, not just the one that named the bad version.
+#
+# The shipped appVersion is "latest", so no ordinary render exercises any of this. It was
+# passed through unsanitised until these tests were written, behind a comment claiming it
+# wasn't. That is the whole case for asserting it: the helper is only ever reached by a value
+# nobody sets today, and the next person to set one would find out in a cluster.
+#
+# The `equal` assertions are deliberately exact rather than a shape match - a sanitiser that
+# mangles a version into something wrong-but-valid would satisfy a regex and still be a bug.
+# The matchRegex beside them is Kubernetes' own label-value grammar, so each case proves both
+# "the right string" and "a legal string".
+suite: appVersion as a label value
+release:
+  name: release
+tests:
+  # The control. If sanitising ever starts rewriting ordinary versions, these are what catch
+  # it - every case below would still pass on a helper that mangled everything.
+  - it: leaves the shipped appVersion untouched
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: latest
+
+  - it: leaves a plain semver untouched
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: 1.4.2
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 1.4.2
+
+  - it: leaves a pre-release version untouched
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: 2.0.0-rc.1
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0-rc.1
+
+  # release-please produces plain semver, so this is the version shape a "+" would arrive in:
+  # someone appending build metadata by hand, or a fork tagging its own builds.
+  - it: rewrites semver build metadata, which a label value cannot carry
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: 2.0.0+abc
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0_abc
+      - matchRegex:
+          path: metadata.labels["app.kubernetes.io/version"]
+          pattern: ^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
+
+  # The other half of the original claim, and the one that was never tested. A chart pinned to
+  # a digest rather than a tag is the recommended shape here (image.digest is what the Sigstore
+  # attestations verify against), so an appVersion in this form is a plausible mistake.
+  - it: rewrites a digest pin, whose colon a label value cannot carry either
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: "sha256:0123456789abcdef"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: sha256_0123456789abcdef
+      - matchRegex:
+          path: metadata.labels["app.kubernetes.io/version"]
+          pattern: ^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
+
+  # Substitution alone is not enough: "." and "_" are legal *inside* a label value and illegal
+  # at either end, so a version that starts or ends with one is rejected even after the
+  # regexReplaceAll has run. That is what the trimAll is for.
+  - it: trims leading and trailing punctuation, which substitution alone would leave
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: ".leading.and.trailing."
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: leading.and.trailing
+      - matchRegex:
+          path: metadata.labels["app.kubernetes.io/version"]
+          pattern: ^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
+
+  # 63 characters is the cap. Truncating before trimming matters: truncation can leave a "."
+  # or "_" as the last character, which is exactly the case the trim has to clean up after.
+  - it: truncates to the 63-character limit and stays legal at the cut
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: 1.2.3-rc.1+meta.0123456789012345678901234567890123456789012345678901234567890123456789
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 1.2.3-rc.1_meta.01234567890123456789012345678901234567890123456
+      - matchRegex:
+          path: metadata.labels["app.kubernetes.io/version"]
+          pattern: ^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$
+
+  # Degenerate, but it must not produce a *malformed* value. An empty label value is legal in
+  # Kubernetes; a value of "___" would not be.
+  - it: collapses an all-punctuation version to the empty value, which is legal
+    templates:
+      - deployment.yaml
+      - service.yaml
+      - serviceaccount.yaml
+    chart:
+      appVersion: "+++"
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: ""
+
+  # The reason this matters at all: the label is on every object, so one bad appVersion fails
+  # the whole release, not one manifest. The Deployment carries it twice - once on itself and
+  # once on the pod template - and the pod template's copy is the one that would block the
+  # pods rather than the rollout.
+  - it: sanitises the pod template's copy of the label too
+    templates:
+      - deployment.yaml
+    chart:
+      appVersion: 2.0.0+abc
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0_abc
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0_abc
+
+  - it: sanitises it on the optional objects as well
+    templates:
+      - ingress.yaml
+      - hpa.yaml
+      - poddisruptionbudget.yaml
+      - networkpolicy.yaml
+    chart:
+      appVersion: 2.0.0+abc
+    set:
+      ingress.enabled: true
+      autoscaling.enabled: true
+      podDisruptionBudget.enabled: true
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0_abc

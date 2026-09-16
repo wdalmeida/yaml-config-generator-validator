@@ -86,10 +86,19 @@ COPY justfile /tmp/ci-bootstrap/justfile
 COPY .github/workflows /tmp/ci-bootstrap/.github/workflows
 # hadolint ignore=DL3003
 RUN cd /tmp/ci-bootstrap \
- && for tool in actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy; do \
+ && for tool in actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy \
+                helm kubeconform helm-unittest; do \
       just tools_dir=/usr/local install-pinned "$tool" || exit 1; \
     done \
  && rm -rf /tmp/ci-bootstrap /root/.cache
+
+# kube-linter is the one tool from ci.yml's helm job this image cannot bake in. Its release
+# publishes no checksums file, so `just install-pinned kube-linter` reads the asset's sha256
+# from GitHub's release API, and that needs an authenticated gh session the build doesn't
+# have (the same reason gh itself is installed below rather than above). Run
+# `just install-pinned kube-linter` once inside the running container, where you are logged
+# in; until then `just helm` fails at its kube-linter step having already run the unit tests,
+# the lint and the render.
 
 # gh is installed *after* that loop on purpose: `just install-pinned plumber` additionally
 # verifies plumber's SLSA build provenance with `gh attestation verify` when gh is present,

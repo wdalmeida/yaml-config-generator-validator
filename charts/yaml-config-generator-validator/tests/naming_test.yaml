@@ -1,0 +1,96 @@
+# The _helpers.tpl name functions, and the one label rule that is not cosmetic: a Deployment's
+# selector is immutable after creation, so anything version-derived leaking into it makes the
+# next `helm upgrade` fail with a field-is-immutable error rather than roll out.
+suite: naming and labels
+release:
+  name: release
+templates:
+  - deployment.yaml
+  - service.yaml
+tests:
+  - it: prefixes the chart name with the release name
+    asserts:
+      - equal:
+          path: metadata.name
+          value: release-yaml-config-generator-validator
+
+  - it: does not repeat the chart name when the release already contains it
+    release:
+      name: yaml-config-generator-validator
+    asserts:
+      - equal:
+          path: metadata.name
+          value: yaml-config-generator-validator
+
+  - it: honours nameOverride
+    set:
+      nameOverride: ycgv
+    asserts:
+      - equal:
+          path: metadata.name
+          value: release-ycgv
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: ycgv
+
+  - it: honours fullnameOverride
+    set:
+      fullnameOverride: static-site
+    asserts:
+      - equal:
+          path: metadata.name
+          value: static-site
+
+  # 63 characters is the DNS label limit several name fields are held to. A long release name
+  # is not exotic - a per-branch preview environment produces them by itself.
+  - it: truncates a long name to a valid DNS label
+    release:
+      name: a-quite-long-release-name-from-a-preview-environment
+    asserts:
+      - matchRegex:
+          path: metadata.name
+          pattern: ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$
+
+  - it: keeps the selector labels free of anything version-derived
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: yaml-config-generator-validator
+            app.kubernetes.io/instance: release
+      - notExists:
+          path: spec.selector.matchLabels["app.kubernetes.io/version"]
+      - notExists:
+          path: spec.selector.matchLabels["helm.sh/chart"]
+
+  - it: carries the full label set on the object itself
+    template: service.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - equal:
+          path: metadata.labels["app.kubernetes.io/part-of"]
+          value: yaml-config-generator-validator
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: latest
+      - equal:
+          path: metadata.labels["helm.sh/chart"]
+          value: yaml-config-generator-validator-0.1.0
+
+  # helm.sh/chart is built from Chart.Version, which is semver and so may carry a "+" in a
+  # build tag - illegal in a label value, hence the replace. The appVersion half of this
+  # problem is a different helper and has a suite of its own (appversion_label_test.yaml).
+  - it: makes a build-metadata chart version survive as a label value
+    chart:
+      version: 1.2.3+build.5
+    template: service.yaml
+    asserts:
+      - equal:
+          path: metadata.labels["helm.sh/chart"]
+          value: yaml-config-generator-validator-1.2.3_build.5
+      - matchRegex:
+          path: metadata.labels["helm.sh/chart"]
+          pattern: ^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$

@@ -8,3 +8,9 @@
 *.swp
 *.bak
 *.orig
+
+# Neither of these belongs in a packaged chart: tests/ is the helm-unittest suites (CI and
+# `just helm` run them from the source tree) and ci/ is the values fixtures CI renders.
+# Shipping them would put example hostnames and a fake image digest inside the artifact.
+tests/
+ci/

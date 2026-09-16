@@ -122,6 +122,36 @@ jobs:
 
           echo "$tmp" >> "$GITHUB_PATH"
 
+      # Extracted straight into HELM_PLUGINS rather than installed with `helm plugin install`,
+      # which would fetch the same tarball again over the network unverified and then run the
+      # release's own install hook. The release does publish a checksum file, but it lists its
+      # assets as ./_dist/<name>, so the digest is looked up by name instead of the whole file
+      # being piped through `sha256sum -c`.
+      - name: Install helm-unittest (checksum-verified)
+        env:
+          HELM_UNITTEST_VERSION: 1.1.2
+        run: |
+          set -euo pipefail
+          # helm-unittest is a Helm plugin, not a binary on PATH, so it goes in HELM_PLUGINS
+          # rather than on $GITHUB_PATH - under the runner temp directory rather than the
+          # workspace, so it never lands in the checked-out tree. Exported here rather than in
+          # a job-level env block, which cannot see the runner context.
+          echo "HELM_PLUGINS=${RUNNER_TEMP}/helm-plugins" >> "$GITHUB_ENV"
+          export HELM_PLUGINS="${RUNNER_TEMP}/helm-plugins"
+          tmp="$(mktemp -d)"
+          asset="helm-unittest-linux-amd64-${HELM_UNITTEST_VERSION}.tgz"
+          base="https://github.com/helm-unittest/helm-unittest/releases/download/v${HELM_UNITTEST_VERSION}"
+          curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}"
+          curl -fsSL -o "${tmp}/checksum.sha" "${base}/helm-unittest-checksum.sha"
+          want="$(awk -v a="*./_dist/${asset}" '$2 == a { print $1 }' "${tmp}/checksum.sha")"
+          # An asset the checksum file doesn't mention would otherwise verify vacuously.
+          test -n "$want"
+          echo "${want}  ${tmp}/${asset}" | sha256sum -c -
+          mkdir -p "${HELM_PLUGINS}/unittest"
+          tar -xzf "${tmp}/${asset}" -C "${HELM_PLUGINS}/unittest"
+          chmod +x "${HELM_PLUGINS}/unittest/untt-linux-amd64"
+          helm plugin list
+
       # kube-linter publishes no checksums file - only a per-asset Sigstore bundle, and those
       # are bare blob signatures (a messageSignature, no SLSA provenance predicate), so
       # `gh attestation verify` cannot consume them and verifying them needs cosign plus a
@@ -147,6 +177,18 @@ jobs:
           echo "${digest#sha256:}  ${tmp}/kube-linter" | sha256sum -c -
           chmod +x "${tmp}/kube-linter"
           echo "$tmp" >> "$GITHUB_PATH"
+
+      # The first of four checks on the chart, and the only one that asserts what the
+      # templates actually produce. helm lint answers "is the chart well-formed", kubeconform
+      # "is the output a valid Kubernetes object", kube-linter "is it a sensible one" - all
+      # three pass a chart whose values stopped reaching the manifest. Suites are in
+      # charts/*/tests/.
+      - name: helm unittest
+        run: |
+          set -euo pipefail
+          for chart in charts/*/; do
+            helm unittest "$chart"
+          done
 
       - name: helm lint
         run: |

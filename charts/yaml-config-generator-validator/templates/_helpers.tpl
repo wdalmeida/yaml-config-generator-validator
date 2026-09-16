@@ -27,14 +27,20 @@ limited to that by the DNS label spec.
 {{- end }}
 
 {{/*
-Labels. app.kubernetes.io/version has to survive being a label value, and a digest pin or a
-tag with a "+" in it would not, hence the replace/trunc.
+Labels.
+
+app.kubernetes.io/version has to survive being a label value, which admits only alphanumerics,
+"-", "_" and "." and must start and end with an alphanumeric. An appVersion is not held to
+that: semver build metadata carries a "+" and a digest pin carries a ":", and either one makes
+the API server reject every object this chart renders, not just the label. So it is sanitised
+rather than passed through - a chart unit test covers this, because nothing else does (the
+current appVersion is "latest", so the default render never exercises it).
 */}}
 {{- define "ycgv.labels" -}}
 helm.sh/chart: {{ include "ycgv.chart" . }}
 {{ include "ycgv.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ regexReplaceAll "[^A-Za-z0-9_.-]" .Chart.AppVersion "_" | trunc 63 | trimAll "-_." | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: {{ include "ycgv.name" . }}

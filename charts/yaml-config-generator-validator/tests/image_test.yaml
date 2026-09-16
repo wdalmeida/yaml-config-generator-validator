@@ -1,0 +1,59 @@
+# ycgv.image decides what actually gets pulled. A digest is the only form the image's
+# Sigstore provenance and SBOM attestations can be verified against (`gh attestation verify`
+# takes a digest, and a tag it resolved a moment ago proves nothing about the tag now), so a
+# digest must beat a tag rather than the other way round.
+suite: image reference
+release:
+  name: release
+templates:
+  - deployment.yaml
+tests:
+  - it: falls back to the chart appVersion when no tag is set
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/wdalmeida/yaml-config-generator-validator:latest
+
+  - it: uses an explicit tag
+    set:
+      image.tag: sha-abc1234
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/wdalmeida/yaml-config-generator-validator:sha-abc1234
+
+  - it: joins a digest with an at-sign rather than a colon
+    set:
+      image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/wdalmeida/yaml-config-generator-validator@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: lets the digest win when both are set
+    set:
+      image.tag: sha-abc1234
+      image.digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/wdalmeida/yaml-config-generator-validator@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+  - it: points at another registry without any other value change
+    # This is the documented path for running the Red Hat / Hummingbird variant, which is
+    # built and smoke-tested but not published. It works only because the chart pins no UID.
+    set:
+      image.repository: registry.example.com/team/ycgv
+      image.tag: redhat
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.com/team/ycgv:redhat
+      - notExists:
+          path: spec.template.spec.securityContext.runAsUser
+
+  - it: keeps IfNotPresent as the pull policy
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
