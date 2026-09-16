@@ -128,20 +128,24 @@ worse than no rule at all.
 
 ## What CI checks
 
-`ci.yml`'s `helm` job runs three tools, each answering a different question:
+`ci.yml`'s `helm` job runs four tools, each answering a different question:
 
 | Tool | Question |
 |---|---|
+| [helm-unittest](https://github.com/helm-unittest/helm-unittest) | does this chart render what its values say it should? |
 | `helm lint` | is this a well-formed chart? |
 | [kubeconform](https://github.com/yannh/kubeconform) `-strict` | is each rendered manifest a **valid** Kubernetes object? |
 | [kube-linter](https://github.com/stackrox/kube-linter) | is it a **sensible** one? |
 
-`helm lint` alone passes a Deployment with a misspelled field quite happily, which is what
-kubeconform catches. kubeconform in turn is perfectly happy with a valid object that runs as
-root — that is kube-linter's job. Its findings go to **Security → Code scanning** as SARIF
-plus a downloadable artifact, like every other scanner here.
+The last three are all *structural*. `helm lint` alone passes a Deployment with a misspelled
+field quite happily, which is what kubeconform catches. kubeconform in turn is perfectly happy
+with a valid object that runs as root — that is kube-linter's job. But none of them reads a
+value and checks where it ended up, so all three stay green on a chart whose values have
+quietly stopped reaching the manifest. That is what the unit tests are for, and why they run
+first. kube-linter's findings go to **Security → Code scanning** as SARIF plus a downloadable
+artifact, like every other scanner here.
 
-All three are version-pinned and verified at install time, and Renovate bumps them in the
+All four are version-pinned and verified at install time, and Renovate bumps them in the
 "workflow tool versions" group. kube-linter is the one exception to "checksum-verified": it
 publishes no checksums file, only per-asset Sigstore bundles, and those are bare blob
 signatures rather than SLSA provenance, so `gh attestation verify` cannot consume them.
@@ -178,7 +182,49 @@ Every values file under `charts/*/ci/*-values.yaml` is rendered too, not just th
 non-ClusterIP Service). Without those, a template that only breaks when an optional feature is
 enabled would reach `main` untested.
 
-Run the same thing locally with `just helm`.
+Run the same thing locally with `just helm`, which runs all four in the same order.
+
+### The unit tests
+
+`charts/*/tests/*_test.yaml`, run by `helm unittest`. They render the chart with a given set of
+values and assert on the resulting manifest — the only check here that connects an input to an
+output. What they cover is deliberately not "every field": it is the decisions that are
+load-bearing, easy to undo in good faith, and invisible to the other three tools.
+
+| Suite | What it pins down |
+|---|---|
+| `deployment_test.yaml` | that no UID is pinned (the OpenShift constraint), the security context in both places, the `/tmp` emptyDir that makes `readOnlyRootFilesystem` real, port 8080, the measured resource defaults, and that `replicas` disappears when the HPA owns it |
+| `image_test.yaml` | that a digest beats a tag — the only form the image's Sigstore attestations can be verified against |
+| `naming_test.yaml` | the fullname/truncation rules, and that nothing version-derived leaks into the Deployment's immutable selector |
+| `service_test.yaml` | that the Service targets the container port **by name**, so the two cannot drift apart |
+| `serviceaccount_test.yaml` | the `create: false` fallback to `default`, which would otherwise leave pods unschedulable |
+| `optional_objects_test.yaml` | that Ingress/HPA/PDB/NetworkPolicy render nothing by default, and render the right thing when switched on |
+| `ci_values_test.yaml` | that the `ci/*-values.yaml` fixtures still promise what their comments say |
+
+Two things worth knowing if you add to them:
+
+- **"Renders nothing" is itself an assertion.** A chart that started emitting an Ingress on
+  upgrade would publish this site to the internet, so the off state is tested as deliberately
+  as the on state.
+- **The suites encode the measured numbers**, not round ones. `128Mi`, `500m`, `256Mi` and the
+  `10m` CPU request come out of the load-test campaign in this document and in
+  `docs/capacity-report.md`. Changing a default should mean changing a test and saying why —
+  that is the point of asserting them.
+
+They found one real bug on the first run: `app.kubernetes.io/version` was passed through from
+`Chart.AppVersion` unsanitised, although the comment beside it claimed otherwise. A label value
+admits only alphanumerics, `-`, `_` and `.`, while an appVersion may legally carry a `+`
+(semver build metadata) or a `:` (a digest pin) — and an invalid label makes the API server
+reject *every* object the chart renders, not just the label. The default `appVersion` is
+`latest`, so no ordinary render ever exercised it. It is sanitised now.
+
+helm-unittest is installed the way every other tool here is: the release tarball, extracted and
+checked against the release's own checksum file, rather than `helm plugin install` — which
+would refetch it over the network unverified and then run the release's own install hook. It is
+a plugin rather than a binary, so it lives in `HELM_PLUGINS` instead of on `PATH`; the justfile
+prepends its pinned copy to that variable the same way it prepends `.ci-tools/<platform>/bin` to
+`PATH`, so a plugin you installed the ordinary way still resolves. `just install-pinned
+helm-unittest` fetches it; `just doctor` reports it alongside the binaries.
 
 ## Verified how
 

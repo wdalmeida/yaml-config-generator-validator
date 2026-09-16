@@ -30,6 +30,11 @@ image     := "localhost/yaml-config-generator-validator:ci"
 # Exact-pin downloads (`just install-pinned`) win over whatever Homebrew has.
 export PATH := tools_bin + ":" + env('PATH')
 
+# helm-unittest is a Helm plugin, so PATH does nothing for it. Helm reads HELM_PLUGINS as a
+# path list, so the pinned copy is prepended the same way tools_bin is prepended to PATH -
+# a plugin installed the ordinary way still resolves, and a missing directory is ignored.
+export HELM_PLUGINS := tools_dir / "helm-plugins" + ":" + env('HELM_PLUGINS', env('HOME') / ".local/share/helm/plugins")
+
 sha256 := if os() == "macos" { "shasum -a 256" } else { "sha256sum" }
 
 # --- versions, read straight out of the workflows -----------------------------------------
@@ -48,6 +53,7 @@ trivy_version         := `grep -rhoE 'TRIVY_VERSION:[[:space:]]*[0-9.]+' .github
 helm_version          := `grep -rhoE 'HELM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 kubeconform_version   := `grep -rhoE 'KUBECONFORM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 kubelinter_version    := `grep -rhoE 'KUBE_LINTER_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
+helmunittest_version  := `grep -rhoE 'HELM_UNITTEST_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 node_major            := `grep -ohE 'node-version: [0-9]+' .github/workflows/ci.yml | head -1 | awk '{print $2}'`
 
 [private]
@@ -212,7 +218,30 @@ install-pinned tool="drifted":
           echo "${digest#sha256:}  ${tmp}/kube-linter" | {{sha256}} -c - >/dev/null
           install -m 0755 "${tmp}/kube-linter" "{{tools_bin}}/kube-linter"
           ;;
-        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy helm kubeconform kube-linter)" >&2; exit 1 ;;
+        helm-unittest)
+          # A Helm plugin rather than a binary, so it is extracted into HELM_PLUGINS instead
+          # of tools_bin. Not `helm plugin install`: that refetches over the network without
+          # verifying anything and then runs the release's own install hook. The checksum
+          # file names its assets ./_dist/<name>, which fetch_verified's grep can't match, so
+          # the digest is looked up by name here - same check ci.yml makes.
+          local v="{{helmunittest_version}}" asset want tmp plugin_dir
+          asset="helm-unittest-${o/darwin/macos}-${a}-${v}.tgz"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${asset}" \
+            "https://github.com/helm-unittest/helm-unittest/releases/download/v${v}/${asset}"
+          curl -fsSL -o "${tmp}/checksum.sha" \
+            "https://github.com/helm-unittest/helm-unittest/releases/download/v${v}/helm-unittest-checksum.sha"
+          want="$(awk -v a="*./_dist/${asset}" '$2 == a { print $1 }' "${tmp}/checksum.sha")"
+          [ -n "$want" ] || { echo "no checksum published for ${asset}" >&2; exit 1; }
+          echo "${want}  ${tmp}/${asset}" | {{sha256}} -c - >/dev/null
+          plugin_dir="{{tools_dir}}/helm-plugins/unittest"
+          rm -rf "$plugin_dir" && mkdir -p "$plugin_dir"
+          tar -xzf "${tmp}/${asset}" -C "$plugin_dir"
+          chmod +x "${plugin_dir}/untt-${o/darwin/macos}-${a}"
+          echo "  pinned $1 -> {{tools_dir}}/helm-plugins"
+          return
+          ;;
+        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy helm kubeconform kube-linter helm-unittest)" >&2; exit 1 ;;
       esac
       echo "  pinned $1 -> {{tools_bin}}"
     }
@@ -262,13 +291,20 @@ doctor *flags:
       "helm|{{helm_version}}|helm version --short | sed 's/^v//; s/+.*//'"
       "kubeconform|{{kubeconform_version}}|kubeconform -v | tr -d v"
       "kube-linter|{{kubelinter_version}}|kube-linter version"
+      "helm-unittest|{{helmunittest_version}}|helm plugin list | awk '\$1 == \"unittest\" {print \$2}'"
     )
 
     missing=(); drifted=()
     [ -n "$quiet" ] || printf '%-14s %-12s %-12s %s\n' TOOL PINNED INSTALLED ''
     for row in "${rows[@]}"; do
       IFS='|' read -r name pinned cmd <<<"$row"
-      if ! command -v "$name" >/dev/null; then
+      # helm-unittest is a Helm plugin, so it never appears on PATH - ask helm instead.
+      if [ "$name" = helm-unittest ]; then
+        probe='helm plugin list 2>/dev/null | grep -q "^unittest[[:space:]]"'
+      else
+        probe='command -v "$name" >/dev/null'
+      fi
+      if ! eval "$probe"; then
         missing+=("$name")
         [ -n "$quiet" ] && echo "$name"
         [ -n "$quiet" ] || printf '%-14s %-12s %-12s %s\n' "$name" "$pinned" "-" "missing"
@@ -367,6 +403,12 @@ links:
 helm: _out
     #!/usr/bin/env bash
     set -euo pipefail
+    # First and fastest: the only check that asserts what values actually produce. The three
+    # below are structural - all of them pass a chart whose values stopped reaching the
+    # manifest. Suites live in charts/*/tests/.
+    for chart in charts/*/; do
+      helm unittest "$chart"
+    done
     # Rendering is what matters: helm lint alone would pass a Deployment with a misspelled
     # field. Each values file under charts/*/ci/ is rendered too, since the optional
     # templates (Ingress, HPA, PDB, NetworkPolicy) are off in the defaults.

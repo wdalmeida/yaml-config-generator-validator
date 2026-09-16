@@ -15,6 +15,12 @@ brew "helm"        # helm job - renders charts/
 brew "kubeconform" # helm job - validates the rendered manifests against the k8s schemas
 brew "kube-linter" # helm job - lints the rendered workloads for security/config smells
 #
+# helm-unittest is not listed for a different reason than plumber below: it is a Helm *plugin*,
+# not a formula, so Homebrew has nothing to install. `just install-pinned helm-unittest` puts
+# the pinned release into .ci-tools/<platform>/helm-plugins, which the justfile prepends to
+# HELM_PLUGINS the way it prepends .ci-tools/<platform>/bin to PATH. `just doctor` reports it
+# alongside the binaries, asking helm rather than PATH whether it is there.
+#
 # plumber (the second, independent Actions scanner) is deliberately NOT installed from its
 # getplumber/plumber tap: Homebrew refuses to load a formula from an untrusted third-party tap
 # without an explicit `brew trust`, and the tap tracks a newer release than ci.yml's action

@@ -8,6 +8,9 @@
     "MD060": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["**/node_modules/**"],
+  // .ci-tools/ holds the pinned tool downloads (`just install-pinned`), which since
+  // helm-unittest includes a plugin directory with the plugin's own README in it. Gitignored,
+  // so CI never sees it - this keeps `just lint:md` from failing on someone else's markdown.
+  "ignores": ["**/node_modules/**", "**/.ci-tools/**"],
   "outputFormatters": [["markdownlint-cli2-formatter-sarif", { "name": "markdownlint-results.sarif" }]]
 }

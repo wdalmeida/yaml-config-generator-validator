@@ -1,0 +1,50 @@
+suite: service
+release:
+  name: release
+templates:
+  - service.yaml
+tests:
+  - it: exposes port 80 and targets the container port by name
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 80
+      # By name, not by number: this is what keeps the Service and the container port from
+      # drifting apart when service.targetPort is changed.
+      - equal:
+          path: spec.ports[0].targetPort
+          value: http
+      - equal:
+          path: spec.ports[0].protocol
+          value: TCP
+
+  - it: selects this release's pods only
+    asserts:
+      - equal:
+          path: spec.selector
+          value:
+            app.kubernetes.io/name: yaml-config-generator-validator
+            app.kubernetes.io/instance: release
+
+  - it: carries annotations when set
+    set:
+      service.type: LoadBalancer
+      service.annotations:
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+      - equal:
+          path: metadata.annotations["service.beta.kubernetes.io/aws-load-balancer-internal"]
+          value: "true"
+
+  - it: has no annotations block by default
+    asserts:
+      - notExists:
+          path: metadata.annotations

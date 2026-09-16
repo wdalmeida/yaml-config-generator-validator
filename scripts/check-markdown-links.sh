@@ -8,6 +8,6 @@ status=0
 while IFS= read -r -d '' file; do
   echo "Checking $file"
   npx markdown-link-check -q -c .markdown-link-check.json "$file" || status=1
-done < <(find . -name '*.md' -not -path './node_modules/*' -print0)
+done < <(find . -name '*.md' -not -path './node_modules/*' -not -path './.ci-tools/*' -print0)
 
 exit $status

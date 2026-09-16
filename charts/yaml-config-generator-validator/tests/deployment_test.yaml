@@ -1,0 +1,243 @@
+# The Deployment carries every decision that is load-bearing and easy to "fix" wrongly, so
+# this is the longest suite. helm lint, kubeconform and kube-linter all pass a Deployment
+# that has quietly lost any one of these - that gap is why these tests exist.
+suite: deployment
+release:
+  name: release
+templates:
+  - deployment.yaml
+tests:
+  - it: renders one Deployment with the release-derived name
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: release-yaml-config-generator-validator
+
+  # OpenShift's restricted-v2 SCC assigns its own UID from the namespace range and rejects a
+  # pod that asks for a specific one. Both images already declare a numeric non-root user
+  # (101 for Alpine, 65532:0 for Red Hat), so runAsNonRoot is enforceable without the chart
+  # guessing which. Adding runAsUser here is the single change most likely to be made in good
+  # faith and most likely to break the OpenShift deployment silently.
+  - it: pins no UID, at the pod level or the container level
+    asserts:
+      - notExists:
+          path: spec.template.spec.securityContext.runAsUser
+      - notExists:
+          path: spec.template.spec.securityContext.runAsGroup
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext.runAsGroup
+
+  - it: sets the pod security context
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: sets the container security context
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value:
+            - ALL
+
+  # readOnlyRootFilesystem is only real because nginx writes nowhere but /tmp. Drop this
+  # volume and the container cannot start; drop the sizeLimit and a pathological request body
+  # can fill the node's disk.
+  - it: mounts an emptyDir at /tmp with a size limit
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].name
+          value: tmp
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /tmp
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: tmp
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.sizeLimit
+          value: 16Mi
+      - notExists:
+          path: spec.template.spec.volumes[0].emptyDir.medium
+
+  - it: switches /tmp to a tmpfs when asked
+    set:
+      tmpVolume.medium: Memory
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].emptyDir.medium
+          value: Memory
+
+  # The app never calls the Kubernetes API. The pod-level field is the one that decides
+  # whether the token volume is projected; the ServiceAccount field alone does not.
+  - it: projects no service account token
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  # 8080, not 80: binding a privileged port would need CAP_NET_BIND_SERVICE and the pod drops
+  # every capability. The Service targets this port by name, so the two cannot drift apart.
+  - it: listens on the unprivileged container port
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8080
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: http
+
+  - it: probes /healthz on both probes
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: http
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: http
+
+  # These four numbers are measured, not chosen - docs/capacity-report.md has the runs. 128Mi
+  # is the knee: 32Mi OOMKilled under the asset workload (46,995 failed requests, two
+  # restarts) where 64Mi was clean, and nothing above 128Mi bought anything below 1 000
+  # connections. The absent CPU limit is equally deliberate: CPU starvation degrades (every
+  # limit down to 20m served every request) while p99 rose 50x from unlimited to 50m.
+  - it: ships the load-tested resource defaults
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 32Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 128Mi
+      - notExists:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+
+  - it: keeps the site up through a rollout
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+      - equal:
+          path: spec.strategy.rollingUpdate.maxUnavailable
+          value: 0
+      - equal:
+          path: spec.strategy.rollingUpdate.maxSurge
+          value: 1
+
+  - it: sets replicas when autoscaling is off
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+
+  # An HPA and a Deployment that both set replicas fight each other: every helm upgrade
+  # resets the count the autoscaler just chose, and the pod count oscillates.
+  - it: omits replicas entirely when the HPA owns them
+    set:
+      autoscaling.enabled: true
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  # An empty matchLabels selects every pod in the namespace, which makes the skew calculation
+  # meaningless. values.yaml deliberately does not let the user supply a selector; the
+  # template always scopes each constraint to this release's own pods.
+  - it: scopes every topology spread constraint to this release
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels
+          value:
+            app.kubernetes.io/name: yaml-config-generator-validator
+            app.kubernetes.io/instance: release
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].whenUnsatisfiable
+          value: ScheduleAnyway
+
+  - it: scopes a user-supplied constraint to this release too
+    set:
+      topologySpreadConstraints:
+        - maxSkew: 2
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: topology.kubernetes.io/zone
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].labelSelector.matchLabels["app.kubernetes.io/instance"]
+          value: release
+
+  - it: omits the optional scheduling blocks by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+      - notExists:
+          path: spec.template.spec.tolerations
+      - notExists:
+          path: spec.template.spec.affinity
+      - notExists:
+          path: spec.template.spec.imagePullSecrets
+      - notExists:
+          path: spec.template.spec.containers[0].env
+      - notExists:
+          path: spec.template.metadata.annotations
+
+  - it: passes the optional blocks through when set
+    set:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - key: dedicated
+          operator: Exists
+      imagePullSecrets:
+        - name: ghcr-credentials
+      podAnnotations:
+        prometheus.io/scrape: "false"
+      podLabels:
+        tier: frontend
+      env:
+        - name: TZ
+          value: UTC
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: linux
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: ghcr-credentials
+      - equal:
+          path: spec.template.metadata.annotations["prometheus.io/scrape"]
+          value: "false"
+      - equal:
+          path: spec.template.metadata.labels.tier
+          value: frontend
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: TZ

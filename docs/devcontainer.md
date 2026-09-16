@@ -27,6 +27,7 @@ minutes. `postCreateCommand` then runs `npm ci` and prints `just doctor`.
 | actionlint, gitleaks, zizmor, plumber | `ci.yml`'s workflow/secret scanners |
 | syft, osv-scanner, semgrep | `supply-chain.yml`'s SBOM and SCA/SAST passes |
 | hadolint, trivy | `container.yml`'s image linting and scanning |
+| helm, kubeconform, helm-unittest | `ci.yml`'s `helm` job — chart unit tests, rendering and schema checks |
 | podman, buildah, skopeo | building and pushing the image `container.yml` builds |
 | Claude Code, opencode | agent CLIs |
 
@@ -45,6 +46,19 @@ Three tools are the exception, because they have to exist before `just` can inst
 `just` itself, `uv` and `gh`. Those are pinned as `ARG`s in `.devcontainer/Dockerfile`,
 annotated with `# renovate:` comments so `renovate.json`'s `devcontainer-tools` manager keeps
 them current.
+
+**kube-linter is the one tool from `ci.yml` this image cannot bake in.** Its release publishes
+no checksums file, so `just install-pinned kube-linter` reads the asset's sha256 from GitHub's
+release API — which needs an authenticated `gh` session the image build doesn't have. Run
+
+```sh
+just install-pinned kube-linter
+```
+
+once inside the running container, where you are logged in. Until then `just helm` gets through
+the unit tests, the lint and the render and then fails at its kube-linter step. (This is the
+same reason `just install-pinned plumber`'s optional `gh attestation verify` step is deferred
+to runtime.)
 
 Claude Code and opencode are deliberately unpinned. They're interactive tools rather than
 gates, they release several times a week, and Claude Code updates itself in place at runtime —
