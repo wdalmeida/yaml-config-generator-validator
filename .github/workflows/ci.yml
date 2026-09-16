@@ -364,10 +364,20 @@ jobs:
       # (registry-integrity-checked, exact version pinned) rather than a raw binary download.
       - run: pip install zizmor==1.30.1
 
+      # Two runs, because zizmor's SARIF mode exits 0 even when it has findings. This job
+      # used to have only the SARIF run, gated on its `outcome` - a gate that could never
+      # fire, and two real findings sat unreported behind it. The plain run is the gate (it
+      # exits non-zero on findings, which is how `just zizmor` has always read it); the SARIF
+      # run is the report, with `if: always()` so it still uploads when the gate fails. Same
+      # shape as the oxlint steps in the `test` job above.
+      - name: zizmor
+        run: zizmor .
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: zizmor (SARIF, for code scanning)
-        id: zizmor
+        if: always()
         run: zizmor . --format=sarif > zizmor-results.sarif
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -385,9 +395,6 @@ jobs:
           sarif_file: zizmor-results.sarif
           category: zizmor
 
-      - name: Fail if zizmor found issues
-        if: steps.zizmor.outcome == 'failure'
-        run: exit 1
 
   plumber:
     runs-on: ubuntu-latest
