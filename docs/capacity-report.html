@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  Standalone load-test report - open it straight from disk, no build step and no network
+  beyond the Google Fonts stylesheet (it degrades to system fonts offline).
+
+  Every figure comes from scripts/helm-loadtest.sh and scripts/helm-capacity.sh against a
+  kind cluster; docs/helm-chart.md carries the same numbers in prose, and
+  docs/capacity-report.md carries them as tables and charts for reading on GitHub, which
+  does not render HTML files in the repository view.
+
+  Numbers use a space as the thousands separator, never the US comma.
+-->
+<title>Concurrency Envelope</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --bg: #f5f7f7;
+    --surface: #ffffff;
+    --surface-2: #eef2f2;
+    --ink: #14181a;
+    --muted: #5a6771;
+    --line: #dde4e5;
+    --accent: #0e6b75;
+    --accent-soft: #d7eaec;
+    --ok: #2f7d5d;
+    --warn: #b0721a;
+    --fatal: #b23a2e;
+    --fatal-soft: #f6e0dd;
+    --heat-0: #eef3f3;
+    --heat-5: #0e6b75;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1214;
+      --surface: #161b1e;
+      --surface-2: #1d2427;
+      --ink: #e7edef;
+      --muted: #94a3ac;
+      --line: #263033;
+      --accent: #3aa6b0;
+      --accent-soft: #143a3f;
+      --ok: #52ac83;
+      --warn: #d29a3e;
+      --fatal: #dd6153;
+      --fatal-soft: #3a211e;
+      --heat-0: #1a2124;
+      --heat-5: #3aa6b0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1214;
+    --surface: #161b1e;
+    --surface-2: #1d2427;
+    --ink: #e7edef;
+    --muted: #94a3ac;
+    --line: #263033;
+    --accent: #3aa6b0;
+    --accent-soft: #143a3f;
+    --ok: #52ac83;
+    --warn: #d29a3e;
+    --fatal: #dd6153;
+    --fatal-soft: #3a211e;
+    --heat-0: #1a2124;
+    --heat-5: #3aa6b0;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 40px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+  h1, h2, h3 { text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: clamp(30px, 5vw, 42px); font-weight: 600; line-height: 1.1; }
+  h2 { font-size: 20px; font-weight: 600; }
+  h3 { font-size: 15px; font-weight: 600; }
+  p { margin: 0; }
+  .lede { color: var(--muted); font-size: 17px; max-width: 62ch; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+  }
+  section { display: flex; flex-direction: column; gap: 16px; }
+  .prose { max-width: 68ch; color: var(--muted); display: flex; flex-direction: column; gap: 10px; }
+  .prose strong { color: var(--ink); font-weight: 600; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* rig strip */
+  .rig {
+    display: flex; flex-wrap: wrap; gap: 0;
+    border: 1px solid var(--line); border-radius: 3px;
+    background: var(--surface); overflow: hidden;
+  }
+  .rig div {
+    flex: 1 1 150px; padding: 12px 16px;
+    border-right: 1px solid var(--line);
+  }
+  .rig div:last-child { border-right: 0; }
+  .rig dt {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 3px;
+  }
+  .rig dd { margin: 0; font-family: var(--mono); font-size: 14px; font-weight: 500; }
+
+  /* callout */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .callout .proof {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--surface-2); padding: 10px 12px;
+    color: var(--ink); overflow-x: auto; white-space: pre;
+  }
+
+  /* matrix */
+  .tabs { display: flex; gap: 2px; flex-wrap: wrap; }
+  .tabs button {
+    font: 500 12px/1 var(--mono); letter-spacing: 0.04em;
+    padding: 8px 13px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--muted); cursor: pointer; border-radius: 2px;
+  }
+  .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .scroller { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  caption { text-align: left; padding: 12px 16px; color: var(--muted); font-size: 13px; border-bottom: 1px solid var(--line); }
+  th, td { padding: 11px 14px; text-align: right; white-space: nowrap; }
+  thead th { font: 500 11px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+  tbody th { text-align: left; font-family: var(--mono); font-weight: 500; }
+  tbody tr + tr td, tbody tr + tr th { border-top: 1px solid var(--line); }
+  td.cell { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 500; }
+  td.cell span { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  td.oom { background: var(--fatal-soft) !important; color: var(--fatal); }
+
+  /* charts */
+  .charts { display: grid; grid-template-columns: 1fr; gap: 28px; }
+  @media (min-width: 820px) { .charts { grid-template-columns: 1fr 1fr; } }
+  figure { margin: 0; border: 1px solid var(--line); background: var(--surface); padding: 16px; }
+  figcaption { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  figcaption b { color: var(--ink); font-weight: 600; display: block; font-size: 14px; }
+  svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch { width: 11px; height: 3px; border-radius: 2px; }
+
+  /* recommendation */
+  .rec { border: 1px solid var(--accent); background: var(--surface); padding: 0; }
+  .rec-head { background: var(--accent-soft); padding: 16px 20px; border-bottom: 1px solid var(--accent); }
+  .rec-head .val { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--ink); }
+  .rec-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .rec ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; color: var(--muted); }
+  .rec li strong { color: var(--ink); font-weight: 600; }
+  pre.yaml {
+    font-family: var(--mono); font-size: 12.5px; background: var(--surface-2);
+    padding: 14px 16px; overflow-x: auto; margin: 0; color: var(--ink); line-height: 1.5;
+  }
+  .footnote { color: var(--muted); font-size: 13px; max-width: 68ch; }
+  ol.caveats { margin: 0; padding-left: 20px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; max-width: 68ch; }
+  ol.caveats strong { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header style="display:flex;flex-direction:column;gap:14px">
+    <p class="eyebrow">Load test · yaml-config-generator-validator</p>
+    <h1>Concurrency Envelope</h1>
+    <p class="lede">How many concurrent connections one pod absorbs, and what each CPU and memory limit actually costs. Every figure is measured on a real cluster, none estimated.</p>
+    <dl class="rig">
+      <div><dt>Cluster</dt><dd>kind v1.37</dd></div>
+      <div><dt>Node</dt><dd>4 vCPU</dd></div>
+      <div><dt>Replicas</dt><dd>1</dd></div>
+      <div><dt>Driver</dt><dd>fortio in-cluster</dd></div>
+      <div><dt>Resource</dt><dd id="rig-bundle">JS bundle</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <p class="eyebrow">The distinction everything rests on</p>
+    <h2>A connection is not a request</h2>
+    <div class="callout">
+      <p><strong>1&#8239;000 connections does not mean 1&#8239;000 req/s.</strong> A keepalive connection carries thousands of sequential requests &mdash; it stays open and keeps going. Connections say how many conversations are open at once; req/s says how fast the words move.</p>
+      <p class="proof">Sockets used: 4 (for perfect keepalive, would be 4)
+Code 200 : 305&#8239;370 (100.0 %)   &larr; 4 connections, 305&#8239;370 requests</p>
+      <p>At 1&#8239;000 connections and <span class="num" id="p-c1000">&mdash;</span> req/s, each connection receives about <strong class="num" id="p-perconn">&mdash;</strong> req/s &mdash; one request every <span class="num" id="p-interval">&mdash;</span> ms. A concurrent <em>user</em> is different again: a browser opens ~6 connections per host, a cold page load is ~4 requests, and most of a reader's time is spent not fetching anything.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The matrix</p>
+    <h2>Throughput by concurrency and CPU limit</h2>
+    <p class="prose">Memory fixed at 128&nbsp;Mi. Each cell is one 20&nbsp;s run at max rate against the JS bundle. The red cell is where the kernel killed the container.</p>
+    <div class="tabs" role="group" aria-label="Displayed metric">
+      <button type="button" data-metric="rps" aria-pressed="true">req/s</button>
+      <button type="button" data-metric="p50" aria-pressed="false">p50</button>
+      <button type="button" data-metric="p99" aria-pressed="false">p99</button>
+      <button type="button" data-metric="perconn" aria-pressed="false">req/s per connection</button>
+    </div>
+    <div class="scroller">
+      <table id="matrix">
+        <caption id="matrix-caption">Peak sustained throughput, requests per second</caption>
+        <thead><tr><th scope="col" style="text-align:left">CPU limit</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The curves</p>
+    <h2>What concurrency and CPU actually buy</h2>
+    <div class="charts">
+      <figure>
+        <figcaption><b>Throughput by concurrency</b>A single connection serialises its requests, so past 500m the extra CPU has nothing to do.</figcaption>
+        <div id="chart-throughput"></div>
+        <div class="legend" id="legend-throughput"></div>
+      </figure>
+      <figure>
+        <figcaption><b>Latency at 1&#8239;000 connections</b>Log scale. The filled dot is the median; the line runs out to p99.</figcaption>
+        <div id="chart-latency"></div>
+        <div class="legend"><span><span class="swatch" style="background:var(--accent)"></span>p50 &rarr; p90 &rarr; p99</span></div>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The cliff</p>
+    <h2>Memory is not a dial, it is a cliff</h2>
+    <p class="prose">CPU is a dial: below what it needs, the service slows down but serves every request. Memory is not: below what it needs, the kernel kills the container mid-response. At rest the pod fits in <strong>5&nbsp;Mi</strong>, which makes a small limit look entirely safe &mdash; and that is the trap.</p>
+    <div class="scroller">
+      <table id="memtable">
+        <caption>Memory limit, tested against the JS bundle</caption>
+        <thead><tr>
+          <th scope="col" style="text-align:left">Limit</th>
+          <th scope="col">Concurrency</th>
+          <th scope="col">Throughput</th>
+          <th scope="col">Result</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="footnote">Peak observed working set is 36&nbsp;Mi at 100 connections. The transient buffer demand of streaming a large file to many connections at once is what no steady-state reading shows you. More CPU makes memory worse: at 1&#8239;000m the pod serves fast enough to hold far more responses in flight than at 500m, and 1&#8239;000m is exactly where 128&nbsp;Mi dies.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Sizing</p>
+    <h2>What to set, per target concurrency</h2>
+    <p class="prose">The cheapest limits that don't cost you latency at each level. Requests stay at <span class="num">cpu:&nbsp;10m</span> / <span class="num">memory:&nbsp;32Mi</span> throughout &mdash; those are what the cluster actually reserves, and the pod idles near zero.</p>
+    <div class="scroller">
+      <table id="sizing">
+        <caption>Recommended limits by target concurrency</caption>
+        <thead><tr>
+          <th scope="col" style="text-align:left">Connections</th>
+          <th scope="col">limits.cpu</th>
+          <th scope="col">limits.memory</th>
+          <th scope="col">Throughput</th>
+          <th scope="col">p99</th>
+          <th scope="col" style="text-align:left">Why this pair</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="footnote"><strong style="color:var(--ink)">500m is the right CPU for almost everything</strong> &mdash; three rows out of four. Below it the tail degrades sharply; above it, throughput per millicore collapses, and it is the only setting that was ever OOMKilled. The memory column is a floor plus margin rather than a target: 64&nbsp;Mi is measured clean at 100 connections, which bounds everything below it, and only the 1&#8239;000-connection row needed its own measurement.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">The answer</p>
+    <h2>The best balance at 1&#8239;000 connections</h2>
+    <div class="rec">
+      <div class="rec-head">
+        <p class="eyebrow" style="color:var(--accent)">Recommended</p>
+        <p class="val">cpu&nbsp;500m · memory&nbsp;256Mi</p>
+      </div>
+      <div class="rec-body">
+        <ul>
+          <li><strong>Doubling CPU from 500m to 1&#8239;000m buys only +23%</strong> throughput (13&#8239;057 &rarr; 16&#8239;051&nbsp;req/s). That is the worst-value step on the curve; below it, 250m &rarr; 500m more than doubles throughput for the same doubling of CPU.</li>
+          <li><strong>500m never triggered an OOM</strong>, even at 128&nbsp;Mi. The only OOM in the whole campaign was at 1&#8239;000m &mdash; the faster the pod, the more responses it holds in flight, and the more buffers it consumes.</li>
+          <li><strong>The median is already excellent at 500m</strong>: 2.9&nbsp;ms against 2.6&nbsp;ms at 1&#8239;000m. The difference is entirely in the tail, and at this concurrency the tail is dominated by queuing, not by CPU.</li>
+          <li><strong>256&nbsp;Mi rather than 128&nbsp;Mi</strong>, confirmed rather than assumed: at 1&#8239;000 connections, 128&nbsp;Mi was killed in 4 runs out of 5 and 256&nbsp;Mi held 3 out of 3. Unused memory costs nothing at runtime &mdash; only the <em>request</em> reserves capacity, and that stays at 32&nbsp;Mi.</li>
+        </ul>
+        <pre class="yaml">resources:
+  requests:
+    cpu: 10m          # what the cluster actually reserves
+    memory: 32Mi
+  limits:
+    cpu: 500m         # ~13 000 req/s at 1 000 connections
+    memory: 256Mi     # 128Mi dies at this concurrency</pre>
+      </div>
+    </div>
+    <p class="prose">If cost matters more than latency, <strong>250m&nbsp;/&nbsp;256Mi</strong> still serves 5&#8239;613&nbsp;req/s at 1&#8239;000 connections with zero errors &mdash; at ~4 requests per cold page load, roughly 1&#8239;400 page loads a second.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Before you quote any of this</p>
+    <h2>Limits of the measurement</h2>
+    <ol class="caveats">
+      <li><strong>The load generator shares the node.</strong> fortio runs in the same 4-vCPU cluster, so absolute throughput is a floor rather than a capacity rating. The shape of the curves and where things break is what transfers.</li>
+      <li><strong>One replica.</strong> Every figure is per pod. The chart deploys two by default.</li>
+      <li><strong>Cold load.</strong> Every request fetches the full bundle. A real browser caches it and afterwards asks only for <span class="num">index.html</span>, so capacity in real users is far higher.</li>
+      <li><strong>nginx forks one worker per <em>node</em> CPU</strong>, not per CPU limit &mdash; 4 here, 64 on a 64-core node. The base image's autotune script cannot fix that under <span class="num">readOnlyRootFilesystem</span>, which forbids it from rewriting nginx.conf.</li>
+    </ol>
+  </section>
+
+</div>
+
+<script>
+  // Space as the thousands separator (never the US comma), period for decimals. No browser
+  // locale combines the two, so format explicitly.
+  const group = (str) => str.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+  const fr0 = (n) => group(Math.round(n).toString());
+  const fr1 = (n) => { const [i, d] = n.toFixed(1).split('.'); return group(i) + '.' + d; };
+
+  const CPUS = [
+    { key: '100m',  label: '100m',   millicores: 100,  color: '#c2703a' },
+    { key: '250m',  label: '250m',   millicores: 250,  color: '#b0921a' },
+    { key: '500m',  label: '500m',   millicores: 500,  color: '#2f7d5d' },
+    { key: '1000m', label: '1 000m', millicores: 1000, color: '#0e6b75' }
+  ];
+  const CONNS = [1, 10, 100, 1000];
+
+  // Every figure below is one 20 s fortio run at max rate against the 421 490-byte JS bundle,
+  // memory limit 128Mi, one replica. oom marks a run the kernel killed mid-flight.
+  const DATA = {
+    '100m':  { 1: { rps: 1814.3, p50: 0.5,   p90: 0.9,    p99: 11.3 },
+               10: { rps: 960.5,  p50: 0.7,   p90: 19.8,   p99: 103.5 },
+               100: { rps: 1269.3, p50: 42.4,  p90: 198.0,  p99: 456.7 },
+               1000: { rps: 1220.6, p50: 753.9, p90: 1621.2, p99: 1962.8 } },
+    '250m':  { 1: { rps: 6404.2, p50: 0.5,   p90: 0.9,    p99: 1.0 },
+               10: { rps: 4405.2, p50: 0.6,   p90: 1.5,    p99: 76.7 },
+               100: { rps: 6066.2, p50: 2.6,   p90: 54.6,   p99: 98.0 },
+               1000: { rps: 5612.8, p50: 81.7,  p90: 539.1,  p99: 850.6 } },
+    '500m':  { 1: { rps: 8552.2, p50: 0.5,   p90: 0.9,    p99: 1.0 },
+               10: { rps: 14946,  p50: 0.6,   p90: 1.0,    p99: 4.2 },
+               100: { rps: 15619,  p50: 0.9,   p90: 20.9,   p99: 55.8 },
+               1000: { rps: 13057,  p50: 2.9,   p90: 307.0,  p99: 582.9 } },
+    '1000m': { 1: { rps: 8688.3, p50: 0.5,   p90: 0.9,    p99: 1.0 },
+               10: { rps: 23409,  p50: 0.6,   p90: 1.0,    p99: 3.8 },
+               100: { rps: 25393,  p50: 0.8,   p90: 14.2,   p99: 34.4 },
+               1000: { rps: 16051,  p50: 2.6,   p90: 229.8,  p99: 480.6, oom: true } }
+  };
+
+  const SIZING = [
+    { conns: 1,    cpu: '250m', mem: '64Mi',  rps: 6404,  p99: 1.0,   why: 'More CPU changes nothing: one connection plateaus at ~8 600 req/s. 100m would cost 11x the p99.' },
+    { conns: 10,   cpu: '500m', mem: '64Mi',  rps: 14946, p99: 4.2,   why: 'Dropping to 250m costs 3.4x the throughput and 18x the p99.' },
+    { conns: 100,  cpu: '500m', mem: '128Mi', rps: 15619, p99: 55.8,  why: '64Mi is the measured floor and peak working set is 36 Mi, so 128Mi is the first comfortable step.' },
+    { conns: 1000, cpu: '500m', mem: '256Mi', rps: 13057, p99: 582.9, why: '128Mi was OOMKilled in 4 runs of 5 here, and 1 000m is the limit that triggers it.' }
+  ];
+
+  const MEMORY = [
+    { limit: '32Mi',  conns: 100,  rps: 2805,  ok: false, note: 'OOMKilled x2, 46 995 requests lost' },
+    { limit: '64Mi',  conns: 100,  rps: 18541, ok: true,  note: 'measured floor, zero errors' },
+    { limit: '128Mi', conns: 100,  rps: 19431, ok: true,  note: 'peak working set 36Mi' },
+    { limit: '128Mi', conns: 1000, rps: 17569, ok: false, note: 'OOMKilled in 4 runs out of 5' },
+    { limit: '256Mi', conns: 1000, rps: 16589, ok: true,  note: 'stable, 3 runs out of 3' },
+    { limit: '512Mi', conns: 1000, rps: 14945, ok: true,  note: 'no gain over 256Mi' }
+  ];
+
+  const REF = DATA['1000m'][1000];
+  document.getElementById('rig-bundle').textContent = fr0(421490) + ' o';
+  document.getElementById('p-c1000').textContent = fr0(REF.rps);
+  document.getElementById('p-perconn').textContent = fr1(REF.rps / 1000);
+  document.getElementById('p-interval').textContent = fr0(1000 / (REF.rps / 1000));
+
+  /* ---------- matrix ---------- */
+  const table = document.getElementById('matrix');
+  const head = table.querySelector('thead tr');
+  CONNS.forEach((c) => {
+    const th = document.createElement('th');
+    th.scope = 'col';
+    th.textContent = fr0(c) + (c === 1 ? ' connection' : ' connections');
+    head.appendChild(th);
+  });
+
+  const METRICS = {
+    rps:     { caption: 'Peak sustained throughput, requests per second',        get: (d) => d.rps,            fmt: fr0,  sub: null, high: true },
+    p50:     { caption: 'Median latency, milliseconds',                     get: (d) => d.p50,            fmt: fr1,  sub: 'ms', high: false },
+    p99:     { caption: '99th percentile latency, milliseconds',              get: (d) => d.p99,            fmt: fr1,  sub: 'ms', high: false },
+    perconn: { caption: 'Requests per second per connection',              get: (d, c) => d.rps / c,     fmt: fr1,  sub: null, high: true }
+  };
+
+  function renderMatrix(metricKey) {
+    const m = METRICS[metricKey];
+    document.getElementById('matrix-caption').textContent = m.caption;
+    const values = [];
+    CPUS.forEach((cpu) => CONNS.forEach((c) => values.push(m.get(DATA[cpu.key][c], c))));
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const body = table.querySelector('tbody');
+    body.textContent = '';
+    CPUS.forEach((cpu) => {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      th.scope = 'row';
+      th.textContent = cpu.label;
+      tr.appendChild(th);
+      CONNS.forEach((c) => {
+        const d = DATA[cpu.key][c];
+        const v = m.get(d, c);
+        const td = document.createElement('td');
+        td.className = 'cell';
+        // Shade by rank within the metric; for latency, low is good, so invert.
+        const t = hi === lo ? 0 : (v - lo) / (hi - lo);
+        const strength = m.high ? t : 1 - t;
+        td.style.background = `color-mix(in srgb, var(--heat-5) ${(strength * 26).toFixed(1)}%, var(--heat-0))`;
+        td.textContent = m.fmt(v) + (m.sub ? ' ' + m.sub : '');
+        if (d.oom) {
+          td.classList.add('oom');
+          const s = document.createElement('span');
+          s.textContent = 'OOMKilled';
+          td.appendChild(s);
+        }
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+  }
+  renderMatrix('rps');
+
+  document.querySelectorAll('.tabs button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      renderMatrix(btn.dataset.metric);
+    });
+  });
+
+  /* ---------- sizing table ---------- */
+  const sizingBody = document.querySelector('#sizing tbody');
+  SIZING.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<th scope="row">' + fr0(row.conns) + '</th>' +
+      '<td class="cell">' + row.cpu + '</td>' +
+      '<td class="cell">' + row.mem + '</td>' +
+      '<td class="cell">' + fr0(row.rps) + ' req/s</td>' +
+      '<td class="cell">' + fr1(row.p99) + ' ms</td>' +
+      '<td style="text-align:left;white-space:normal;color:var(--muted);font-size:13px">' + row.why + '</td>';
+    sizingBody.appendChild(tr);
+  });
+
+  /* ---------- memory table ---------- */
+  const memBody = document.querySelector('#memtable tbody');
+  MEMORY.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<th scope="row">' + row.limit + '</th>' +
+      '<td class="cell">' + fr0(row.conns) + '</td>' +
+      '<td class="cell">' + fr0(row.rps) + ' req/s</td>' +
+      '<td style="text-align:left;color:' + (row.ok ? 'var(--ok)' : 'var(--fatal)') + ';font-weight:500">' +
+        (row.ok ? '✓ ' : '✕ ') + row.note + '</td>';
+    if (!row.ok) tr.querySelector('td.cell').classList.add('oom');
+    memBody.appendChild(tr);
+  });
+
+  /* ---------- charts ---------- */
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (name, attrs, text) => {
+    const n = document.createElementNS(NS, name);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  function throughputChart() {
+    const W = 480, H = 320, ml = 56, mr = 16, mt = 14, mb = 44;
+    const iw = W - ml - mr, ih = H - mt - mb;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img',
+      'aria-label': 'Throughput in requests per second by connection count, one line per CPU limit' });
+
+    const yMax = 26000;
+    const x = (c) => ml + (Math.log10(c) / 3) * iw;
+    const y = (v) => mt + ih - (v / yMax) * ih;
+
+    [0, 5000, 10000, 15000, 20000, 25000].forEach((v) => {
+      svg.appendChild(el('line', { x1: ml, x2: ml + iw, y1: y(v), y2: y(v),
+        stroke: 'var(--line)', 'stroke-width': 1 }));
+      svg.appendChild(el('text', { x: ml - 8, y: y(v) + 4, 'text-anchor': 'end',
+        fill: 'var(--muted)', 'font-size': 10, 'font-family': 'var(--mono)' }, fr0(v)));
+    });
+    CONNS.forEach((c) => {
+      svg.appendChild(el('text', { x: x(c), y: mt + ih + 18, 'text-anchor': 'middle',
+        fill: 'var(--muted)', 'font-size': 10, 'font-family': 'var(--mono)' }, fr0(c)));
+    });
+    svg.appendChild(el('text', { x: ml + iw / 2, y: H - 6, 'text-anchor': 'middle',
+      fill: 'var(--muted)', 'font-size': 10, 'font-family': 'var(--mono)' }, 'concurrent connections'));
+
+    CPUS.forEach((cpu) => {
+      const pts = CONNS.map((c) => [x(c), y(DATA[cpu.key][c].rps)]);
+      svg.appendChild(el('path', {
+        d: pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' '),
+        fill: 'none', stroke: cpu.color, 'stroke-width': 2, 'stroke-linejoin': 'round'
+      }));
+      CONNS.forEach((c, i) => {
+        const d = DATA[cpu.key][c];
+        svg.appendChild(el('circle', { cx: pts[i][0], cy: pts[i][1], r: d.oom ? 5 : 3.5,
+          fill: d.oom ? 'var(--fatal)' : cpu.color, stroke: 'var(--surface)', 'stroke-width': 1.5 }));
+      });
+    });
+    const oomPt = [x(1000), y(DATA['1000m'][1000].rps)];
+    svg.appendChild(el('text', { x: oomPt[0] - 8, y: oomPt[1] - 10, 'text-anchor': 'end',
+      fill: 'var(--fatal)', 'font-size': 10, 'font-weight': 600, 'font-family': 'var(--mono)' }, 'OOM'));
+
+    document.getElementById('chart-throughput').appendChild(svg);
+
+    const lg = document.getElementById('legend-throughput');
+    CPUS.forEach((cpu) => {
+      const s = document.createElement('span');
+      s.innerHTML = '<span class="swatch" style="background:' + cpu.color + '"></span>' + cpu.label;
+      lg.appendChild(s);
+    });
+  }
+
+  function latencyChart() {
+    const W = 480, H = 320, ml = 62, mr = 30, mt = 14, mb = 44;
+    const iw = W - ml - mr, ih = H - mt - mb;
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img',
+      'aria-label': 'p50, p90 and p99 latency at 1 000 connections for each CPU limit, log scale' });
+
+    const lx = (ms) => ml + ((Math.log10(Math.max(ms, 1)) - 0) / 3.4) * iw; // 1 ms → ~2 512 ms
+    [1, 10, 100, 1000].forEach((ms) => {
+      svg.appendChild(el('line', { x1: lx(ms), x2: lx(ms), y1: mt, y2: mt + ih,
+        stroke: 'var(--line)', 'stroke-width': 1 }));
+      svg.appendChild(el('text', { x: lx(ms), y: mt + ih + 18, 'text-anchor': 'middle',
+        fill: 'var(--muted)', 'font-size': 10, 'font-family': 'var(--mono)' }, fr0(ms) + ' ms'));
+    });
+    svg.appendChild(el('text', { x: ml + iw / 2, y: H - 6, 'text-anchor': 'middle',
+      fill: 'var(--muted)', 'font-size': 10, 'font-family': 'var(--mono)' }, 'latency (log scale)'));
+
+    const rowH = ih / CPUS.length;
+    CPUS.forEach((cpu, i) => {
+      const d = DATA[cpu.key][1000];
+      const cy = mt + rowH * i + rowH / 2;
+      svg.appendChild(el('text', { x: ml - 10, y: cy + 4, 'text-anchor': 'end',
+        fill: 'var(--ink)', 'font-size': 11, 'font-weight': 500, 'font-family': 'var(--mono)' }, cpu.label));
+      svg.appendChild(el('line', { x1: lx(d.p50), x2: lx(d.p99), y1: cy, y2: cy,
+        stroke: cpu.color, 'stroke-width': 2, 'stroke-linecap': 'round', opacity: 0.45 }));
+      svg.appendChild(el('circle', { cx: lx(d.p90), cy: cy, r: 4, fill: 'var(--surface)',
+        stroke: cpu.color, 'stroke-width': 2 }));
+      svg.appendChild(el('circle', { cx: lx(d.p50), cy: cy, r: 4.5, fill: cpu.color }));
+      svg.appendChild(el('circle', { cx: lx(d.p99), cy: cy, r: 3, fill: cpu.color, opacity: 0.6 }));
+      svg.appendChild(el('text', { x: lx(d.p99) + 8, y: cy + 4, fill: 'var(--muted)',
+        'font-size': 10, 'font-family': 'var(--mono)' }, fr0(d.p99)));
+    });
+
+    document.getElementById('chart-latency').appendChild(svg);
+  }
+
+  throughputChart();
+  latencyChart();
+</script>
+</body>
+</html>

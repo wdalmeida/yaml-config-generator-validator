@@ -92,6 +92,20 @@ ingress:
 # unlimited p99 was 7.5ms, at 250m it was 75ms, at 50m it was 376ms. The requests figure is
 # what the cluster actually reserves; the limit only decides when the kernel starts punishing
 # you.
+# Sizing by target concurrency, measured (docs/capacity-report.md has the runs behind it).
+# Requests stay as set below in every case - they are what the cluster reserves, and the pod
+# idles near zero. Only the limits move:
+#
+#   connections   limits.cpu   limits.memory   throughput      p99
+#   1             250m         64Mi            6 404 req/s     1.0 ms
+#   10            500m         64Mi            14 946 req/s    4.2 ms
+#   100           500m         128Mi           15 619 req/s    55.8 ms
+#   1 000         500m         256Mi           13 057 req/s    582.9 ms
+#
+# 500m is the right CPU for almost everything: below it the tail degrades sharply, above it
+# throughput per millicore collapses (500m -> 1 000m buys 23% at 1 000 connections) and it is
+# the only setting that was ever OOMKilled. The memory column is a floor plus margin rather
+# than a target - 64Mi is measured clean at 100 connections, which bounds everything below it.
 resources:
   requests:
     cpu: 10m

@@ -269,6 +269,10 @@ two replicas idle at around 5Mi and near-zero CPU. For a team-sized audience the
 far more than enough; the reason not to shrink them further is the memory cliff above, not
 throughput.
 
+> The full run — every concurrency level, both charts, and the reasoning — is written up in
+> [the capacity report](capacity-report.md), with an interactive version in
+> [`capacity-report.html`](capacity-report.html).
+
 ### If your platform mandates a CPU limit too
 
 The chart limits memory and not CPU, for the reasons above. Plenty of platforms don't allow
@@ -304,6 +308,28 @@ means very little.
 
 At 100m the curve is not even monotonic — 1 814 req/s at one connection, 961 at ten. Under a
 tight quota, extra concurrency costs more in throttling and context-switching than it returns.
+
+### Sizing by target concurrency
+
+The cheapest limits that don't cost you latency, per level. Requests stay at `cpu: 10m` /
+`memory: 32Mi` throughout — those are what the cluster actually reserves, and the pod idles
+near zero.
+
+| Connections | `limits.cpu` | `limits.memory` | Throughput | p99 | Why this pair |
+|---|---|---|---|---|---|
+| 1 | 250m | 64Mi | 6 404 req/s | 1.0 ms | More CPU changes nothing: one connection plateaus at ~8 600 req/s. 100m would cost 11× the p99 (11.3 ms). |
+| 10 | 500m | 64Mi | 14 946 req/s | 4.2 ms | Dropping to 250m costs 3.4× the throughput and 18× the p99 (76.7 ms). |
+| 100 | 500m | 128Mi | 15 619 req/s | 55.8 ms | 64Mi is the measured floor and peak working set is 36 Mi, so 128Mi is the first comfortable step. |
+| 1 000 | 500m | 256Mi | 13 057 req/s | 582.9 ms | 128Mi was OOMKilled in 4 runs of 5 here, and 1 000m is the limit that triggers it. |
+
+Two things this table is not saying:
+
+- **The memory column is a floor plus margin, not a target.** 64Mi is measured clean at 100
+  connections, which bounds everything below it; only the 1 000-connection row was measured
+  separately, because that is where 128Mi fails.
+- **500m is the right CPU for almost everything.** It appears in three rows out of four. Below
+  it the tail degrades sharply; above it, throughput per millicore falls off a cliff — 500m to
+  1 000m buys 23% at 1 000 connections, and is the only setting that got OOMKilled.
 
 ### Connections are not requests
 
