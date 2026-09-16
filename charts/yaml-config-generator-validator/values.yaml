@@ -71,10 +71,22 @@ ingress:
   # controller forwards /tools/yaml/ and nginx returns index.html via its SPA fallback, but
   # then serves it for every asset path too, and the page loads blank.
 
-# Real defaults rather than the customary empty map: this is one nginx worker set serving a
-# handful of static files, and its footprint is known rather than guessed. No CPU limit -
-# throttling a request-serving process to save CPU it only uses in bursts buys nothing here -
-# but a memory limit, because a leak should kill the pod rather than the node.
+# Real defaults rather than the customary empty map, and measured rather than guessed - the
+# numbers behind every line here are in docs/helm-chart.md, along with how to reproduce them
+# (`just loadtest`).
+#
+# **Do not lower the memory limit below 64Mi.** Steady-state usage is about 5Mi, which makes
+# a small limit look safe and is a trap: serving this app's ~500KB JS bundle to many
+# connections at once peaks at 36Mi of working set, and a 32Mi limit OOMKills under that load
+# (measured: 46,995 failed requests and two restarts, against zero at 64Mi). 128Mi is the
+# knee plus headroom - it bought ~5% more throughput than 64Mi and nothing beyond that.
+#
+# No CPU limit, and that is the load-tested choice rather than a stylistic one. CPU
+# starvation here degrades gracefully - throttling costs throughput and tail latency but
+# never drops a request - while any limit hurts p99 out of proportion to what it saves:
+# unlimited p99 was 7.5ms, at 250m it was 75ms, at 50m it was 376ms. The requests figure is
+# what the cluster actually reserves; the limit only decides when the kernel starts punishing
+# you.
 resources:
   requests:
     cpu: 10m

@@ -204,6 +204,99 @@ The kube-linter gate was checked the other way round too, so that a passing run 
 something: rendering the chart with `--set securityContext=null --set podSecurityContext=null`
 produces `run-as-non-root` and `no-read-only-root-fs` findings and exit code 1.
 
+## Sizing, measured
+
+The defaults in `values.yaml` are load-tested, not guessed. Reproduce any of this with
+`just loadtest` (see [the script](../scripts/helm-loadtest.sh) for what it does).
+
+**Method.** One replica, `fortio` driving load from inside the cluster, on a single-node
+`kind` cluster (Kubernetes v1.37) with 4 CPUs and ~2 GiB. Two workloads: the 484-byte
+`index.html`, and the ~500 KB JS bundle that **every real page load fetches**. The load
+generator shares the node with the server, so treat the absolute throughput figures as a
+floor rather than a capacity rating; the shape of each curve, and where things break, is
+what transfers.
+
+### Memory: 64Mi is a cliff, not a slope
+
+100 concurrent fetches of the JS bundle, no CPU limit:
+
+| Memory limit | req/s | p50 | p99 | Result |
+|---|---|---|---|---|
+| 32Mi | 2,805 | 4.86 ms | 1585 ms | **OOMKilled twice, 46,995 failed requests** |
+| 64Mi | 18,541 | 0.81 ms | 43 ms | clean |
+| 128Mi | 19,431 | 0.81 ms | 41.6 ms | clean, peak working set 36Mi |
+
+**The trap here is that steady-state memory is about 5Mi.** Measure the small-page workload
+alone and the container looks like it fits in 8Mi — it survived over a million requests at a
+**4Mi** limit. Size on that number and it OOMKills the first time real browsers pull the
+bundle concurrently. The gap is transient buffer demand while streaming a large file to many
+connections, which no steady-state reading shows you.
+
+Above 64Mi the extra memory buys ~5% throughput and nothing else, so 128Mi is the knee plus
+headroom rather than a number picked for comfort.
+
+### CPU: starvation degrades, it doesn't kill
+
+16 concurrent fetches of the JS bundle, 128Mi:
+
+| CPU limit | req/s | p50 | p99 |
+|---|---|---|---|
+| none | 20,729 | 0.63 ms | 7.5 ms |
+| 250m | 5,042 | 0.69 ms | 75 ms |
+| 100m | 847 | 0.97 ms | 182 ms |
+| 50m | 332 | 1.41 ms | 376 ms |
+| 20m | 125 | **91 ms** | 789 ms |
+
+Every one of those runs served every request: zero errors, zero restarts. CPU pressure is
+throttling, and throttling is survivable — which is exactly why the chart sets **no CPU
+limit** and does set a memory one. Under-provision CPU and you get a slower site; under-provision
+memory and the kernel kills the container mid-response.
+
+Note how the cost lands almost entirely on the tail. Median latency is flat from unlimited
+down to 50m; p99 rises 50× over the same range, because CFS lets nginx burst through its
+quota early in each 100 ms period and then stalls. At 20m even the median collapses, which is
+where it stops being usable under sustained load.
+
+If your platform requires a CPU limit, 250m keeps p99 under 100 ms here. Below 100m, expect
+tail latency in the hundreds of milliseconds under load.
+
+### What this means for a small deployment
+
+A page load is roughly four requests (HTML, JS, CSS, icon). Even at a **50m** limit — one
+twentieth of a core — a single replica served ~330 bundle fetches a second, and the default
+two replicas idle at around 5Mi and near-zero CPU. For a team-sized audience the defaults are
+far more than enough; the reason not to shrink them further is the memory cliff above, not
+throughput.
+
+### One thing you cannot tune from the chart
+
+nginx runs `worker_processes auto`, which means **one worker per node CPU, not per CPU
+limit**. With a 100m limit on this 4-CPU node it still forked four workers; on a 64-core node
+it would fork 64, and memory overhead grows with them. The base image ships an autotune script
+for precisely this, and it cannot work here — it rewrites `/etc/nginx/nginx.conf`, which
+`readOnlyRootFilesystem: true` forbids, and says so:
+
+```text
+30-tune-worker-processes.sh: error: can not modify /etc/nginx/nginx.conf (read-only file system?)
+```
+
+Setting `NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE=1` in `env` therefore does nothing except
+log that error. On a large node, raise `resources.limits.memory` rather than trying to tune
+the worker count; pinning it properly means baking `worker_processes` into a derived image.
+
+### Two measurement mistakes worth knowing about
+
+Both of these produced confident, wrong numbers before they were caught, and both are easy to
+repeat:
+
+- **fortio's default read buffer is 128 KiB**, which is smaller than this app's JS bundle. It
+  aborts each response mid-read and opens a fresh socket, reporting ~50% `Code -1` that looks
+  like a server fault. Throughput came out half what it really was and p50 nine times worse.
+  `-httpbufferkb 1024` fixes it; `Sockets used: 4 (for perfect keepalive, would be 4)` is the
+  line that confirms it.
+- **`grep -E '^Code [0-9]+'` never matches `Code  -1`** — two spaces, a minus sign. An error
+  check written that way reports every run as clean no matter what happened.
+
 ## Deliberately not done
 
 - **Publishing the chart** (to an OCI registry or a `gh-pages` chart repo). It installs from a
