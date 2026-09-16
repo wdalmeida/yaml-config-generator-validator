@@ -1,0 +1,49 @@
+# Rendered and schema-checked by CI (and `just helm`), not shipped to a cluster: the
+# combination that turns on every optional template at once, so a template that only
+# breaks when Ingress/PDB/HPA/NetworkPolicy are enabled can't reach main unnoticed.
+#
+# Named *-values.yaml under ci/ by the chart-testing convention.
+replicaCount: 3
+image:
+  repository: ghcr.io/wdalmeida/yaml-config-generator-validator
+  digest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+imagePullSecrets:
+  - name: ghcr-credentials
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: yaml.example.com
+      paths:
+        - path: /tools/yaml
+          pathType: Prefix
+  tls:
+    - secretName: yaml-tls
+      hosts:
+        - yaml.example.com
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+tmpVolume:
+  medium: Memory
+  sizeLimit: 8Mi
+podAnnotations:
+  example.com/owner: platform
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: web
+    effect: NoSchedule
+env:
+  - name: TZ
+    value: UTC

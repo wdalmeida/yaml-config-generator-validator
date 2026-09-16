@@ -45,6 +45,9 @@ osv_version           := `grep -rhoE 'OSV_SCANNER_VERSION:[[:space:]]*[0-9.]+' .
 semgrep_version       := `grep -ohE 'semgrep/semgrep@sha256:[0-9a-f]+ # [0-9.]+' .github/workflows/supply-chain.yml | head -1 | awk '{print $NF}'`
 hadolint_version      := `grep -rhoE 'HADOLINT_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 trivy_version         := `grep -rhoE 'TRIVY_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
+helm_version          := `grep -rhoE 'HELM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
+kubeconform_version   := `grep -rhoE 'KUBECONFORM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
+kubelinter_version    := `grep -rhoE 'KUBE_LINTER_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 node_major            := `grep -ohE 'node-version: [0-9]+' .github/workflows/ci.yml | head -1 | awk '{print $2}'`
 
 [private]
@@ -174,7 +177,42 @@ install-pinned tool="drifted":
           UV_TOOL_DIR="{{tools_dir}}/uv" UV_TOOL_BIN_DIR="{{tools_bin}}" \
             uv tool install --force "$1==${v}" >/dev/null
           ;;
-        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy)" >&2; exit 1 ;;
+        helm)
+          # get.helm.sh, not GitHub releases, and a per-asset .sha256sum that already names
+          # the asset - so fetch_verified needs no rename. The tarball unpacks into an
+          # <os>-<arch>/ directory rather than dropping the binary at the root.
+          local v="{{helm_version}}" asset tmp
+          asset="helm-v${v}-${o}-${a}.tar.gz"
+          tmp="$(fetch_verified "https://get.helm.sh" "$asset" "${asset}.sha256sum")"
+          tar -xzf "${tmp}/${asset}" -C "$tmp" "${o}-${a}/helm"
+          install -m 0755 "${tmp}/${o}-${a}/helm" "{{tools_bin}}/helm"
+          ;;
+        kubeconform)
+          local v="{{kubeconform_version}}" asset tmp
+          asset="kubeconform-${o}-${a}.tar.gz"
+          tmp="$(fetch_verified "https://github.com/yannh/kubeconform/releases/download/v${v}" "$asset" "CHECKSUMS")"
+          tar -xzf "${tmp}/${asset}" -C "$tmp" kubeconform
+          install -m 0755 "${tmp}/kubeconform" "{{tools_bin}}/kubeconform"
+          ;;
+        kube-linter)
+          # The one tool here with no checksums file in its release - only Sigstore bundles,
+          # and those are bare blob signatures rather than provenance, so `gh attestation
+          # verify` can't read them. GitHub's release API reports each asset's sha256, which
+          # is the same trust root a checksums.txt would have had, so that is what this
+          # checks; ci.yml does exactly the same.
+          local v="{{kubelinter_version}}" tag asset digest tmp
+          command -v gh >/dev/null || { echo "kube-linter needs the gh CLI to read its release digest" >&2; exit 1; }
+          tag="v${v}"
+          asset="kube-linter-${o}"
+          [ "$a" = arm64 ] && asset="${asset}_arm64"
+          digest="$(gh api "repos/stackrox/kube-linter/releases/tags/${tag}" --jq ".assets[] | select(.name == \"${asset}\") | .digest")"
+          [ -n "$digest" ] || { echo "no digest reported for ${asset}" >&2; exit 1; }
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/kube-linter" "https://github.com/stackrox/kube-linter/releases/download/${tag}/${asset}"
+          echo "${digest#sha256:}  ${tmp}/kube-linter" | {{sha256}} -c - >/dev/null
+          install -m 0755 "${tmp}/kube-linter" "{{tools_bin}}/kube-linter"
+          ;;
+        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy helm kubeconform kube-linter)" >&2; exit 1 ;;
       esac
       echo "  pinned $1 -> {{tools_bin}}"
     }
@@ -221,6 +259,9 @@ doctor *flags:
       "semgrep|{{semgrep_version}}|semgrep --version"
       "hadolint|{{hadolint_version}}|hadolint --version | awk '{print \$NF}'"
       "trivy|{{trivy_version}}|trivy --version | head -1 | awk '{print \$2}'"
+      "helm|{{helm_version}}|helm version --short | sed 's/^v//; s/+.*//'"
+      "kubeconform|{{kubeconform_version}}|kubeconform -v | tr -d v"
+      "kube-linter|{{kubelinter_version}}|kube-linter version"
     )
 
     missing=(); drifted=()
@@ -270,7 +311,7 @@ doctor *flags:
 
 # Everything ci.yml runs, each job reported pass/fail (see `just install` first)
 [group('ci')]
-ci: (_run "lint build size coverage schemas markdown links audit actionlint gitleaks zizmor plumber")
+ci: (_run "lint build size coverage schemas markdown links audit actionlint gitleaks zizmor plumber helm")
 
 # ci.yml test job: oxlint (human-readable, then SARIF)
 [group('ci')]
@@ -321,6 +362,42 @@ links:
     npm run lint:links
 
 # ci.yml audit job
+# ci.yml helm job: lint the chart, then render it and check every manifest against the real
+# Kubernetes schemas. Rendering is what matters - helm lint alone would pass a Deployment with
+# a misspelled field. Each values file under charts/*/ci/ is rendered too, since the optional
+# templates (Ingress, HPA, PDB, NetworkPolicy) are off in the defaults.
+[group('ci')]
+helm: _out
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for chart in charts/*/; do
+      helm lint "$chart"
+      for values in "$chart"ci/*-values.yaml; do
+        [ -e "$values" ] || continue
+        helm lint "$chart" --values "$values"
+      done
+    done
+    for chart in charts/*/; do
+      helm template release "$chart" | kubeconform -strict -summary -kubernetes-version 1.31.0
+      for values in "$chart"ci/*-values.yaml; do
+        [ -e "$values" ] || continue
+        echo "$(basename "$values"):"
+        helm template release "$chart" --values "$values" \
+          | kubeconform -strict -summary -kubernetes-version 1.31.0
+      done
+    done
+    # kubeconform says whether the object is valid; kube-linter says whether it is sensible.
+    # Config and the two documented exclusions are in .kube-linter.yaml.
+    kube-linter lint charts/ --format sarif > "{{out}}/kube-linter-results.sarif" || true
+    kube-linter lint charts/
+    for chart in charts/*/; do
+      for values in "$chart"ci/*-values.yaml; do
+        [ -e "$values" ] || continue
+        echo "kube-linter $(basename "$values"):"
+        helm template release "$chart" --values "$values" | kube-linter lint -
+      done
+    done
+
 [group('ci')]
 audit:
     npm audit --audit-level=high

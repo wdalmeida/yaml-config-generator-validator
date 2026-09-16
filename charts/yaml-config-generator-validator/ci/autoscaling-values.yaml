@@ -1,0 +1,15 @@
+# The mutually exclusive half of everything-values.yaml: autoscaling on (so the Deployment
+# must omit replicas), a ServiceAccount the chart does not create, a name override, and a
+# non-ClusterIP Service - each of which takes a different branch.
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetMemoryUtilizationPercentage: 75
+serviceAccount:
+  create: false
+  name: preexisting-sa
+fullnameOverride: ycgv
+service:
+  type: LoadBalancer
+  port: 8080

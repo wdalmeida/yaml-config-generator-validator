@@ -1,0 +1,28 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ycgv.fullname" . }}
+  labels:
+    {{- include "ycgv.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ycgv.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {{- with .Values.networkPolicy.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+  # No egress rules, with Egress in policyTypes: that is a deny-all, and it is deliberate
+  # rather than an omission. This pod opens no outbound connection - not to a backend, not to
+  # an API, not even to DNS, since nginx here has no resolver directive and proxies nothing.
+  # The GitHub calls this app makes are made by the browser, not by the pod.
+  egress: []
+{{- end }}

@@ -11,6 +11,9 @@
 brew "actionlint"  # actionlint job - lints the workflow YAML itself
 brew "gitleaks"    # gitleaks job - secret scanning
 brew "zizmor"      # zizmor job - GitHub Actions security linter
+brew "helm"        # helm job - renders charts/
+brew "kubeconform" # helm job - validates the rendered manifests against the k8s schemas
+brew "kube-linter" # helm job - lints the rendered workloads for security/config smells
 #
 # plumber (the second, independent Actions scanner) is deliberately NOT installed from its
 # getplumber/plumber tap: Homebrew refuses to load a formula from an untrusted third-party tap
