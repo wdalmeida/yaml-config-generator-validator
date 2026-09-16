@@ -1,0 +1,18 @@
+# Timed acceptances for Trivy, expiring 2026-09-23.
+#
+# Trivy does NOT auto-discover this file - only the plain `.trivyignore` format, which has no
+# expiry. container.yml passes it explicitly with --ignorefile, which is the whole point:
+# an acceptance that silently outlived its reason would be worse than no acceptance at all.
+#
+# Everything here is a stopgap for a base-image bump we do not control. When
+# nginx-unprivileged ships an Alpine with openssl >= 3.5.8-r0, Renovate re-pins the digest,
+# these entries stop matching, and the file should be emptied rather than extended.
+vulnerabilities:
+  - id: CVE-2026-14456
+    statement: >-
+      openssl DoS via unbounded memory growth in the QUIC server path. Present in the pinned
+      nginx-unprivileged base (libcrypto3/libssl3 3.5.7-r0, fixed 3.5.8-r0); no local fix
+      exists until upstream rebuilds. This image serves static files over HTTP/1.1 and does
+      not enable QUIC or HTTP/3, so the affected code path is not reachable as configured.
+      Accepted for 7 days pending the base-image bump.
+    expired_at: 2026-09-23

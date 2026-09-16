@@ -180,6 +180,45 @@ Two knock-on effects worth knowing:
 `supply-chain.yml`'s npm passes are unaffected — a lockfile and an npm SBOM have no
 binary/source split, and one of those two passes reads the repository directly anyway.
 
+## Accepting a CVE you can't fix, with a deadline
+
+Almost every CVE the scanners find in this image is in the Alpine base, not in anything this
+repo writes — so the fix is a base-image bump nobody here controls. Blocking every PR in the
+meantime helps nobody; silently disabling the gate helps less. Both scanners therefore read a
+**dated acceptance file**, and both fail the build again the moment the date passes:
+
+| Scanner | File | Key |
+| --- | --- | --- |
+| Trivy | `.trivyignore.yaml` | `expired_at: YYYY-MM-DD` |
+| OSV-Scanner | `osv-scanner.toml` | `ignoreUntil = YYYY-MM-DD` |
+
+Three things about this are easy to get wrong:
+
+- **Trivy does not auto-discover `.trivyignore.yaml`.** It auto-discovers only the plain
+  `.trivyignore` format, which has no expiry at all — so an acceptance dropped in that file
+  would live forever. `container.yml` passes `--ignorefile .trivyignore.yaml` explicitly, and
+  that explicitness is the feature.
+- **Neither scan job checks out the repo** — they scan an artifact the `build` job produced.
+  Each now does a *sparse* checkout of just its own acceptance file, so the job still can't
+  accidentally scan working-tree sources instead of the image.
+- **OSV-Scanner's `ignoreUntil` removes the finding from its JSON**, which is what lets the
+  CVSS≥7.0 gate in that job keep working unchanged. It also prints an "unused ignores" list,
+  so an entry that has outlived its finding announces itself rather than lingering.
+
+The same base-image problem does not look the same to both tools. Trivy reports the current
+openssl situation as one CVE; OSV splits Alpine's openssl advisories into nine `ALPINE-CVE-*`
+ids. They are the same package at the same version, they are fixed by the same bump, and they
+disappear together — but the two files are not copies of each other, and adding an id to one
+does not cover the other.
+
+`container.yml` also runs **weekly on a schedule**, not only on push and PR. An expiry date is
+only meaningful if something runs to notice it; without the cron, an acceptance could outlive
+its deadline unnoticed on a quiet week. The weekly run also catches a newly published CVE
+landing against an image whose own inputs never changed.
+
+When the base image is bumped, delete the entries rather than extending the date. An
+acceptance that gets renewed twice is a decision nobody is really making.
+
 ## Pulling and verifying a published image
 
 ```sh
