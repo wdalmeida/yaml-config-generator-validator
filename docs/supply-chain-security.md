@@ -18,9 +18,9 @@ fully open source) as a second, independent SAST engine, and `.github/workflows/
 `gitleaks` job scans for secrets on every push/PR (MIT-licensed; also runs locally as a
 pre-commit hook - see `CLAUDE.md`).
 
-`.github/workflows/container.yml` applies the same treatment to the OCI image built from
-`Containerfile` - hadolint on the file, a smoke test of the running container, Trivy and a
-second OSV-Scanner pass over the image (**the image, not its SBOM** - see below), and (on
+`.github/workflows/container.yml` applies the same treatment to the OCI images built from
+`Containerfile` and `Containerfile.redhat` - hadolint on both files, a smoke test of each
+running container, Trivy and a second OSV-Scanner pass over the image (**the image, not its SBOM** - see below), and (on
 `main`) a GHCR push with SLSA provenance and SBOM attestations. See [running as a container](container.md) for the job-by-job breakdown; the
 patterns below (checksum-verified tool installs, digest pinning, regex-managed versions) apply
 there identically.
@@ -330,7 +330,7 @@ npx --yes -p renovate renovate-config-validator --strict renovate.json
 dependency: `groupName: "github actions"` for every `uses:`/digest bump (including plain re-pins
 where GitHub moved a tag to a new commit but the version didn't change), `groupName: "workflow
 tool versions"` for the six `customManagers` above, `groupName: "container base images"` for the
-two digest-pinned bases in `Containerfile`, and `groupName: "npm dependencies (minor/patch)"` for
+four digest-pinned bases across `Containerfile` and `Containerfile.redhat`, and `groupName: "npm dependencies (minor/patch)"` for
 every npm minor/patch bump. npm **majors** are deliberately left out of that
 last group - each still gets its own PR, since a major bump (react 19→20, vite 8→9) is more
 likely to need actual code changes here, and bundling one with unrelated minor/patch bumps would

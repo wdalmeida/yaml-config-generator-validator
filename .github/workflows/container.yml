@@ -1,11 +1,22 @@
 name: Container
 
-# Builds the Containerfile image on every push/PR, proves it actually serves the app
-# safely, scans it with two independent vulnerability databases, and - only on push to
-# main - publishes it to GHCR with SLSA build provenance and an SBOM attestation.
+# Builds both Containerfiles on every push/PR, proves each one actually serves the app
+# safely, scans them with two independent vulnerability databases, and - only on push to
+# main - publishes them to GHCR with SLSA build provenance and an SBOM attestation.
 #
-# Nothing here gates the app itself: the site ships via GitHub Pages (deploy.yml). This
-# job exists so the container path can't silently rot. See docs/container.md.
+# There are two images because there are two answers to "what may we run in production":
+# `Containerfile` (Alpine/nginx-unprivileged, ~15 MB) and `Containerfile.redhat` (Red Hat
+# Hardened Images from Project Hummingbird, ~53 MB, RHEL lineage and glibc). Neither is
+# the canonical one - see docs/container.md.
+#
+# `build`, `scan` and `sca` each carry the same two-entry matrix. GitHub Actions has no way
+# to share one matrix literal across jobs without an extra job whose only output is that
+# literal, so it is written out three times. Adding a variant means editing all three - and
+# `suffix` must stay empty for alpine, since it names the code-scanning categories that
+# already have alert history. `publish` is deliberately not a matrix; see its own comment.
+#
+# Nothing here gates the app itself: the site ships via GitHub Pages (deploy.yml). These
+# jobs exist so the container path can't silently rot. See docs/container.md.
 
 on:
   push:
@@ -26,8 +37,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static lint of the Containerfile itself (hadolint, GPL-3.0/FOSS): missing USER,
-  # unpinned base tags, shell anti-patterns in RUN, non-numeric UIDs. Installed as a
+  # Static lint of both Containerfiles (hadolint, GPL-3.0/FOSS): missing USER, unpinned
+  # base tags, shell anti-patterns in RUN, non-numeric UIDs. One invocation over both
+  # files rather than a matrix - hadolint takes several paths and puts each finding's own
+  # file in the SARIF, so this stays one job, one artifact and one code-scanning category
+  # while still covering both. Installed as a
   # checksum-verified binary rather than via a wrapper action - same pattern as ci.yml's
   # gitleaks and supply-chain.yml's Syft. Also covers .devcontainer/Dockerfile: nothing
   # else in CI builds that image, so this lint is the only thing standing between it and
@@ -61,7 +75,7 @@ jobs:
 
       - name: hadolint (SARIF, for code scanning)
         id: hadolint
-        run: hadolint --format sarif Containerfile .devcontainer/Dockerfile > hadolint-results.sarif
+        run: hadolint --format sarif Containerfile Containerfile.redhat .devcontainer/Dockerfile > hadolint-results.sarif
         continue-on-error: true
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -90,6 +104,20 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # Both images are built even when one fails: which of the two broke, and whether it
+      # was both, is the first thing you want to know from a red run.
+      fail-fast: false
+      matrix:
+        include:
+          - variant: alpine
+            containerfile: Containerfile
+            suffix: ""
+            user: "101:101"
+          - variant: redhat
+            containerfile: Containerfile.redhat
+            suffix: "-redhat"
+            user: "65532:0"
     permissions:
       contents: read
       packages: write # layer cache only - the image itself is pushed by the publish job
@@ -120,11 +148,15 @@ jobs:
       # timestamp churn.
       - name: Build image (buildah, OCI format, reproducible timestamps)
         env:
-          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci-${{ matrix.variant }}
+          CONTAINERFILE: ${{ matrix.containerfile }}
           CACHE_LOGGED_IN: ${{ steps.cache-login.outcome == 'success' }}
         run: |
           set -euo pipefail
           epoch="$(git log -1 --format=%ct)"
+          # One cache repository for both variants on purpose: buildah keys each entry by
+          # the layer's own content digest, so two different base images simply never look
+          # up the same entry - there is nothing to collide.
           cache_ref="ghcr.io/${GITHUB_REPOSITORY,,}/build-cache"
 
           args=(--format oci --timestamp "$epoch" --pull=always)
@@ -140,6 +172,7 @@ jobs:
 
           buildah bud \
             "${args[@]}" \
+            --file "$CONTAINERFILE" \
             --build-arg IMAGE_CREATED="$(date -u -d "@${epoch}" +%Y-%m-%dT%H:%M:%SZ)" \
             --build-arg IMAGE_REVISION="$GITHUB_SHA" \
             --build-arg IMAGE_VERSION="${GITHUB_REF_NAME}-${GITHUB_SHA:0:7}" \
@@ -148,7 +181,8 @@ jobs:
 
       - name: Smoke test the running container
         env:
-          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci-${{ matrix.variant }}
+          EXPECTED_USER: ${{ matrix.user }}
         run: |
           set -euo pipefail
           # Dump the container's own log whichever way this ends - a failed assertion is
@@ -184,7 +218,26 @@ jobs:
 
           # Runs as the unprivileged nginx user, with a read-only root filesystem
           # (the run above would have failed outright if it needed to write outside /tmp).
-          test "$(podman exec smoke id -u)" = "101"
+          #
+          # Two assertions, because neither alone is portable across both images.
+          # `podman exec smoke id -u` is out: the Red Hat runtime image is distroless, with
+          # no shell and no coreutils to exec. `podman top smoke uid` is out too - podman 6
+          # answers that descriptor itself, but the runner's podman hands it to host ps(1),
+          # which rejects it with "unsupported option (BSD syntax)". So the exact identity
+          # comes from the image config - read with jq rather than podman's --format, whose
+          # Go-template braces would need escaping in the justfile that mirrors this - and
+          # the `user` descriptor proves what the process is really running as. That one is
+          # long-standing, and psgo answers it from the host, so it works against an image
+          # with nothing in it to run. It resolves a name where the container has a passwd
+          # entry (nginx) and prints the bare UID where it doesn't (65532), so it can only
+          # be held to "not root"; sort -u collapses nginx's master and worker rows.
+          test "$(podman inspect smoke | jq -r '.[0].Config.User')" = "$EXPECTED_USER"
+          top_users="$(podman top smoke user | tail -n +2 | sort -u)"
+          test -n "$top_users"
+          if grep -qxE 'root|0' <<<"$top_users"; then
+            echo "container process is running as root: $top_users" >&2
+            exit 1
+          fi
           echo "::endgroup::"
 
       # Handed to the scan and publish jobs so neither has to rebuild - they scan and push
@@ -194,7 +247,7 @@ jobs:
       # an OCI archive tarball ("file manifest.json not found in tar").
       - name: Export the image (OCI archive to push, Docker archive to scan)
         env:
-          IMAGE_REF: localhost/yaml-config-generator-validator:ci
+          IMAGE_REF: localhost/yaml-config-generator-validator:ci-${{ matrix.variant }}
         run: |
           set -euo pipefail
           podman save --format oci-archive -o image.tar "$IMAGE_REF"
@@ -202,7 +255,7 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: container-image
+          name: container-image${{ matrix.suffix }}
           path: |
             image.tar
             image-docker.tar
@@ -222,8 +275,8 @@ jobs:
           chmod +x "${tmp}/syft"
           echo "$tmp" >> "$GITHUB_PATH"
 
-      # Describes the built image - the Alpine apk packages and the shipped dist/ files,
-      # not the npm tree supply-chain.yml's SBOM already covers. This is a deliverable
+      # Describes the built image - its OS packages (apk for Alpine, rpm for Red Hat) and
+      # the shipped dist/ files, not the npm tree supply-chain.yml's SBOM already covers. This is a deliverable
       # (published, and attested in the publish job), deliberately NOT the input to either
       # scan below: an SBOM lists apk *binary* packages (libcrypto3, libssl3) while the
       # advisories are keyed on the *source* package (openssl), and that mapping only
@@ -235,9 +288,10 @@ jobs:
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          # Name fixed by osv-scan.yml's download-sbom-artifact input, which the sca job
-          # below reuses.
-          name: sbom.cdx.json
+          # The alpine leg keeps the bare name supply-chain.yml's SBOM artifact also uses
+          # (artifacts are scoped to a workflow run, so the two never collide); only the
+          # publish job below consumes these.
+          name: sbom${{ matrix.suffix }}.cdx.json
           path: sbom.cdx.json
           retention-days: 90
 
@@ -249,6 +303,14 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: alpine
+            suffix: ""
+          - variant: redhat
+            suffix: "-redhat"
     permissions:
       contents: read
       security-events: write
@@ -266,7 +328,7 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: container-image
+          name: container-image${{ matrix.suffix }}
 
       # Trivy pulls a ~110 MB vulnerability database plus a checks bundle from a registry on
       # every cold run - the single largest download in this workflow, and an anonymous
@@ -316,7 +378,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: trivy-results
+          name: trivy-results${{ matrix.suffix }}
           path: trivy-results.sarif
           retention-days: 90
 
@@ -325,7 +387,41 @@ jobs:
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
           sarif_file: trivy-results.sarif
-          category: trivy
+          category: trivy${{ matrix.suffix }}
+
+      # A scanner that can't identify the image's OS reports nothing and exits 0, which is
+      # indistinguishable in a check list from a clean image. That is the same "false
+      # negative with a green tick" this workflow already refuses to accept from the SBOM
+      # path, so the run says out loud what was actually enumerated.
+      #
+      # This is not hypothetical: Trivy 0.74.0 identifies the Red Hat image as OS family
+      # "none" and scans zero packages, because Project Hummingbird's /etc/os-release says
+      # ID="hummingbird" and no scanner distro map knows that name yet (its ID_LIKE says
+      # "fedora rhel"; Trivy doesn't fall back to it, Grype does). The packages are right
+      # there in /usr/lib/sysimage/rpm - Syft catalogues all 45 of them for the SBOM - so
+      # this is a scanner gap, not an unreadable image. See docs/container.md.
+      - name: Report what the scanner could see
+        run: |
+          set -euo pipefail
+          trivy image --input image-docker.tar --scanners vuln --list-all-pkgs \
+            --format json --output trivy-coverage.json --quiet
+          python3 - <<'EOF'
+          import json
+
+          with open('trivy-coverage.json') as handle:
+              report = json.load(handle)
+
+          family = ((report.get('Metadata') or {}).get('OS') or {}).get('Family') or 'none'
+          packages = sum(len(result.get('Packages') or []) for result in report.get('Results') or [])
+          print(f'OS family: {family}; OS packages enumerated: {packages}')
+
+          if family == 'none' or packages == 0:
+              print(
+                  '::warning title=Vulnerability scan enumerated no packages::Trivy read this '
+                  f'image as OS family "{family}" and found {packages} packages to check, so a '
+                  'passing scan says nothing about it. See docs/container.md.'
+              )
+          EOF
 
       # --ignorefile is explicit because Trivy only auto-discovers the plain `.trivyignore`
       # format, which has no expiry. Naming the .yaml file is what buys the dated acceptances.
@@ -343,7 +439,8 @@ jobs:
   #
   # It scans the IMAGE, not the SBOM - unlike supply-chain.yml's npm passes, which do use
   # the SBOM (and are unaffected by this). Feeding it the image SBOM is a silent false
-  # negative for OS packages: the SBOM lists apk binary subpackages (libcrypto3, libssl3)
+  # negative for OS packages (measured below on the Alpine image; the same binary-vs-source
+  # package split applies to rpm): the SBOM lists apk binary subpackages (libcrypto3, libssl3)
   # carrying "upstream=openssl" only as a purl qualifier, while OSV's Alpine advisories are
   # keyed on the source package (openssl) - so the lookup misses. Measured on this repo's
   # own image, same scanner and same database, only the input differing: SBOM input -> "no
@@ -356,6 +453,14 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: alpine
+            suffix: ""
+          - variant: redhat
+            suffix: "-redhat"
     permissions:
       contents: read
       security-events: write
@@ -373,7 +478,7 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: container-image
+          name: container-image${{ matrix.suffix }}
 
       # Installed directly rather than via google/osv-scanner-action (which the npm passes
       # still use): the action has no image-scanning mode, and a checksum-verified binary is
@@ -399,27 +504,41 @@ jobs:
       # --verbosity error: the findings go to the output file either way, so the only thing
       # the default level adds to the log is a per-layer "Starting filesystem walk" trace.
       # The gate step below prints the human-readable summary instead.
+      # Same gap as the Trivy job's coverage step, one step earlier: against the Red Hat
+      # image OSV-Scanner 2.5.1 prints "No package sources found" and writes no output file
+      # at all, so `test -s` would fail the job for a tool limitation rather than a finding.
+      # The empty case is reported as a warning and skips the upload and the gate below -
+      # uploading an empty SARIF would put a clean, authoritative-looking zero-alert result
+      # in code scanning for an image that was never actually examined.
       - name: OSV-Scanner (SARIF, for code scanning)
+        id: osv
         run: |
+          set -euo pipefail
           osv-scanner scan image --archive image-docker.tar \
             --config osv-scanner.toml \
             --format sarif --output-file osv-results-container.sarif \
             --verbosity error || true
-          test -s osv-results-container.sarif
+          if [ -s osv-results-container.sarif ]; then
+            echo "scanned=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scanned=false" >> "$GITHUB_OUTPUT"
+            msg="OSV-Scanner enumerated no packages in this image, so nothing was checked"
+            echo "::warning title=OSV-Scanner found no package sources::${msg} against OSV.dev. See docs/container.md."
+          fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && steps.osv.outputs.scanned == 'true'
         with:
-          name: osv-scan-results-container
+          name: osv-scan-results-container${{ matrix.suffix }}
           path: osv-results-container.sarif
           retention-days: 90
 
       - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
-        if: always()
+        if: always() && steps.osv.outputs.scanned == 'true'
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
           sarif_file: osv-results-container.sarif
-          category: osv-scanner-container
+          category: osv-scanner-container${{ matrix.suffix }}
 
       # Held to exactly the bar Trivy's gate uses - fixable, HIGH or CRITICAL (CVSS >= 7.0)
       # - so the two engines fail the build for the same class of finding rather than one of
@@ -427,6 +546,7 @@ jobs:
       # --ignore-unfixed flag of its own, hence reading its JSON: a vulnerability counts only
       # if its group's max_severity is >= 7.0 and its affected ranges carry a "fixed" event.
       - name: Fail on fixable HIGH/CRITICAL findings
+        if: steps.osv.outputs.scanned == 'true'
         run: |
           osv-scanner scan image --archive image-docker.tar \
             --config osv-scanner.toml \
@@ -468,12 +588,24 @@ jobs:
           sys.exit(1 if blocking else 0)
           EOF
 
-  # Publishes to GHCR only from main, and only behind every check above. The image is
-  # pushed byte-for-byte from the archive the build job smoke-tested (skopeo copy, no
-  # rebuild), then attested: build provenance (SLSA - which workflow, which commit, which
-  # runner produced this digest) and the SBOM, both signed keyless through Sigstore and
-  # pushed alongside the image so `gh attestation verify` / `cosign verify-attestation`
-  # work against the registry copy.
+  # Publishes to GHCR only from main, and only behind every check above - including the
+  # other variant's, since `needs:` on a matrixed job waits for every leg: a broken Red Hat
+  # image blocks the Alpine push too, which is the safer default for two images built from
+  # one commit. Each is pushed byte-for-byte from the archive the build job smoke-tested
+  # (skopeo copy, no rebuild), then attested: build provenance (SLSA - which workflow,
+  # which commit, which runner produced this digest) and the SBOM, both signed keyless
+  # through Sigstore and pushed alongside the image so `gh attestation verify` /
+  # `cosign verify-attestation` work against the registry copy.
+  #
+  # Only the Alpine image is published, deliberately - this is the one job that is not a
+  # matrix. Neither vulnerability scanner in this pipeline can read the Red Hat image yet
+  # (Trivy sees OS family "none", OSV-Scanner finds no package sources - see the scan and
+  # sca jobs above, and docs/container.md), so publishing it would mean handing out an
+  # image whose CVE gate is vacuous rather than passing. It is built, smoke-tested and
+  # SBOM'd on every run; build it yourself from `Containerfile.redhat` until a scanner
+  # here can actually see it. Turning this into the same two-entry matrix as the jobs above
+  # - suffix "" / "-redhat", moving tag latest / redhat, so `:latest` never changes meaning
+  # for anyone already pulling it - is the whole change when that day comes.
   publish:
     needs: [hadolint, build, scan, sca]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
