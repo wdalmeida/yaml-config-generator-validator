@@ -2,11 +2,7 @@
   "name": "yaml-config-generator-validator",
   "private": true,
   "version": "0.0.0",
-  "license": "MIT",
   "type": "module",
-  "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
-  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -51,5 +47,20 @@
     "typescript": "~7.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "xmlbuilder2": {
+      "js-yaml": "^4.3.2"
+    },
+    "markdownlint-cli2": {
+      "smol-toml": "^1.8.0"
+    },
+    "ajv": {
+      "fast-uri": "^3.1.6"
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   }
 }
