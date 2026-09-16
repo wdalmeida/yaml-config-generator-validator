@@ -27,8 +27,19 @@ const theme = EditorView.theme({
   '.cm-activeLine, .cm-activeLineGutter': {
     backgroundColor: 'var(--surface)',
   },
+  // CodeMirror's own focus ring is removed because it draws inside the content box, under the
+  // gutter - but it is REPLACED, not just deleted. A keyboard user tabbing into the editor got
+  // no visible focus indicator at all, which is a straight WCAG 2.4.7 failure; the ring moves
+  // to the wrapper so it traces the whole field, gutter included.
   '&.cm-focused': {
     outline: 'none',
+  },
+  '&.cm-editor': {
+    borderRadius: 'inherit',
+  },
+  '&.cm-focused.cm-editor': {
+    outline: '2px solid var(--accent-strong)',
+    outlineOffset: '2px',
   },
   '.cm-selectionBackground, ::selection': {
     backgroundColor: 'var(--accent-soft) !important',
@@ -41,6 +52,11 @@ const theme = EditorView.theme({
 interface YamlEditorProps {
   value: string
   onChange: (value: string) => void
+  // The accessible name for the editor. CodeMirror renders a contenteditable <div>, which a
+  // screen reader announces as an edit box with no name unless one is given - and unlike a
+  // <textarea> there is no <label for> to attach. Required rather than optional so a new
+  // caller has to decide what this field is called.
+  label: string
   onFocus?: () => void
   onBlur?: () => void
   placeholder?: string
@@ -55,7 +71,7 @@ interface YamlEditorProps {
 // meta-package (both pull in autocomplete/search/theming this app doesn't use). Lazy-loaded
 // (see ConfigWorkspace's `React.lazy`) since CodeMirror is the single largest dependency here -
 // see .size-limit.json's separate "YAML editor (lazy-loaded)" budget entry.
-export default function YamlEditor({ value, onChange, onFocus, onBlur, placeholder: placeholderText, readOnly = false }: YamlEditorProps) {
+export default function YamlEditor({ value, onChange, label, onFocus, onBlur, placeholder: placeholderText, readOnly = false }: YamlEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
 
@@ -76,6 +92,7 @@ export default function YamlEditor({ value, onChange, onFocus, onBlur, placehold
   // directly) so the mount effect's dependency array can stay empty and genuinely mean
   // "run once."
   const initialValueRef = useRef(value)
+  const labelRef = useRef(label)
   const initialPlaceholderRef = useRef(placeholderText)
   const readOnlyRef = useRef(readOnly)
 
@@ -96,6 +113,14 @@ export default function YamlEditor({ value, onChange, onFocus, onBlur, placehold
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         EditorView.lineWrapping,
         theme,
+        // Read once at mount like the other refs below: no caller changes it, and rebuilding
+        // the view to rename a field nobody renames would cost a compartment for nothing.
+        EditorView.contentAttributes.of({
+          'aria-label': labelRef.current,
+          // Announced as a multi-line edit box rather than a single-line one, which is what it
+          // is - and, when read-only, the rendered output it actually is.
+          ...(readOnlyRef.current ? { 'aria-readonly': 'true' } : {}),
+        }),
         initialPlaceholderRef.current ? placeholder(initialPlaceholderRef.current) : [],
         // Both: readOnly blocks edit transactions, editable removes the contenteditable and
         // the caret, so the field reads as output rather than as an input someone is expected

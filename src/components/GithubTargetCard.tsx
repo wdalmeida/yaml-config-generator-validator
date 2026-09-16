@@ -7,10 +7,28 @@ export function GithubTargetCard({ target }: { target: GithubTarget }) {
   return (
     <section className="card">
       <h2>Target file on GitHub</h2>
+      {/* aria-label rather than a visible <label> because the three sit inline as one path and
+          the placeholders carry the visual labelling. The names are spelled out rather than
+          echoing the placeholder: "owner" alone is not much use read aloud on its own. */}
       <div className="github-row">
-        <input value={target.owner} placeholder="owner" aria-label="owner" onChange={(e) => target.setOwner(e.target.value)} />
-        <input value={target.repo} placeholder="repo" aria-label="repo" onChange={(e) => target.setRepo(e.target.value)} />
-        <input value={target.branch} placeholder="branch" aria-label="branch" onChange={(e) => target.setBranch(e.target.value)} />
+        <input
+          value={target.owner}
+          placeholder="owner"
+          aria-label="Repository owner"
+          onChange={(e) => target.setOwner(e.target.value)}
+        />
+        <input
+          value={target.repo}
+          placeholder="repo"
+          aria-label="Repository name"
+          onChange={(e) => target.setRepo(e.target.value)}
+        />
+        <input
+          value={target.branch}
+          placeholder="branch"
+          aria-label="Branch"
+          onChange={(e) => target.setBranch(e.target.value)}
+        />
         <p className="github-path">
           <code>{target.path}</code>
           <span>fixed filename — this is where our software looks for it</span>

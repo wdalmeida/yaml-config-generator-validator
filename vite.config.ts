@@ -14,11 +14,16 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
+    // Vitest stubs CSS imports by default, which also empties `?raw` ones - and
+    // App.contrast.test.ts reads the real App.css through `?raw` to check the palette's
+    // contrast ratios. Processing it costs a few ms and keeps that test reading the stylesheet
+    // the app actually ships rather than a copy of the colours kept in sync by hand.
+    css: true,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/main.tsx', 'src/test-setup.ts'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/main.tsx', 'src/test-setup.ts', 'src/test-a11y.ts'],
     },
   },
 })

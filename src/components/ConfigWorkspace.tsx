@@ -4,6 +4,7 @@ import { draftFromCandidate, emptyDraftFor, parseDraft } from '../configs'
 import { fetchFileContent } from '../lib/github'
 import { dataToYaml, parseYaml, yamlIssueMessages } from '../lib/yaml'
 import { usePersistedState } from '../lib/persisted-state'
+import { CopyButton } from './CopyButton'
 import { FieldRow } from './fields/FieldRow'
 import { GithubPushLinks } from './GithubPushLinks'
 import { GithubTargetCard } from './GithubTargetCard'
@@ -99,8 +100,18 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
             </button>
           </div>
 
-          <Suspense fallback={<textarea className="yaml-editor-fallback" readOnly value={yamlText} />}>
+          <Suspense
+            fallback={
+              <textarea
+                className="yaml-editor-fallback"
+                aria-label={`${definition.defaultFilename} YAML`}
+                readOnly
+                value={yamlText}
+              />
+            }
+          >
             <YamlEditor
+              label={`${definition.defaultFilename} YAML`}
               value={yamlText}
               onChange={handleYamlTextChange}
               onFocus={() => {
@@ -126,9 +137,9 @@ export function ConfigWorkspace({ definition }: { definition: ConfigDefinition }
           </div>
 
           <div className="yaml-panel-footer">
-            <button type="button" disabled={feedback.kind !== 'valid'} onClick={() => navigator.clipboard.writeText(yamlText)}>
+            <CopyButton value={yamlText} subject="YAML" disabled={feedback.kind !== 'valid'}>
               Copy YAML
-            </button>
+            </CopyButton>
             <button type="button" disabled={!canPush || target.checkState === 'checking'} onClick={target.runCheck}>
               {target.checkState === 'checking' ? 'Checking...' : 'Push to GitHub'}
             </button>
