@@ -153,6 +153,16 @@ Everything focusable shares one `:focus-visible` rule — the pills, the text fi
 the links. `.theme-switch` is the single exception, and only because its radios are clipped out
 of sight: the ring has to go on the strip (`:focus-within`) rather than on an invisible input.
 
+It is **3px**, and that number was measured in a browser rather than argued about. At 2px the
+ring read clearly on a text input and on the theme switch and noticeably weaker on a pill —
+which is the hard case, and not by accident: a pill is a capsule carrying its own 1px grey
+border, so the ring lands as a second thin concentric line 2px outside the first, in a row of
+six near-identical capsule outlines all competing with it. Four candidates were rendered side by
+side on adjacent pills (2px, 3px, 2px plus a soft halo, and a border-hugging variant); 3px was
+the one that fixed the pill without over-weighting the input or the switch, so it went on the
+shared rule rather than becoming a bespoke `.config-tab` rule. WCAG 2.4.11 wants a thicker
+indicator anyway.
+
 The rule sets a colour and an offset and **deliberately no `border-radius`**. An outline already
 follows the element's own border curve, so one buys nothing — and on a blanket rule it *replaces*
 the element's radius for as long as it has focus. `.config-tab` is `border-radius: 999px`, so

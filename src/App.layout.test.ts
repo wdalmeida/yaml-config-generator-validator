@@ -87,8 +87,20 @@ describe('the focus indicator', () => {
   // out of sight and the ring has to go on the strip instead of on the invisible input.
   it('is a single :focus-visible rule the pills and the text fields both use', () => {
     const body = rule(':focus-visible')
-    expect(body).toMatch(/outline:\s*2px solid var\(--accent-strong\)/)
+    expect(body).toMatch(/outline:\s*3px solid var\(--accent-strong\)/)
     expect(body).toMatch(/outline-offset:\s*2px/)
+  })
+
+  // 3px rather than 2px, and that was measured in a browser rather than argued about. At 2px
+  // the ring read clearly on a text input and on the theme switch and noticeably weaker on a
+  // pill: a pill is a capsule carrying its own 1px grey border, so the ring is a second thin
+  // concentric line outside the first, in a row of six near-identical capsule outlines
+  // competing with it. Thinner again would reintroduce that, and WCAG 2.4.11 wants a thicker
+  // indicator, not a thinner one.
+  it('is at least 3px thick', () => {
+    const width = /outline:\s*(\d+)px/.exec(rule(':focus-visible'))
+    expect(width).not.toBeNull()
+    expect(Number(width?.[1])).toBeGreaterThanOrEqual(3)
   })
 
   // The bug this guards: an outline already follows the element's own border curve, so a
@@ -105,7 +117,12 @@ describe('the focus indicator', () => {
     expect(css).toMatch(/@media \(forced-colors: active\)[\s\S]{0,200}outline:[^;]*Highlight/)
   })
 
-  it('gives the theme switch its own ring, since its radios are visually clipped', () => {
-    expect(rule('.theme-switch:focus-within')).toMatch(/outline:\s*2px solid var\(--accent-strong\)/)
+  // It needs its own rule only because its radios are clipped out of sight, so the ring has to
+  // go on the strip rather than on an invisible input - not because it should look different.
+  // Asserted against the shared rule so the two cannot drift to different weights.
+  it('gives the theme switch the same ring, since its radios are visually clipped', () => {
+    const shared = /outline:\s*[^;]+;/.exec(rule(':focus-visible'))?.[0]
+    expect(shared).toBeDefined()
+    expect(rule('.theme-switch:focus-within')).toContain(shared as string)
   })
 })

@@ -774,7 +774,14 @@ textarea {
    accent-coloured pill and the dark surfaces - this is the same ring everywhere, offset so it
    reads against a filled background as well as an outlined one. */
 :focus-visible {
-  outline: 2px solid var(--accent-strong);
+  /* 3px, not 2. Measured in a browser rather than reasoned about: at 2px the ring read clearly
+     on a text input and on the theme switch, and noticeably weaker on a pill. The pill is the
+     hard case and nothing about it is accidental - it is a capsule with its own 1px grey
+     border, so the ring is a second thin concentric line 2px outside the first, and it sits in
+     a row of six near-identical capsule outlines competing with it. One number fixes it
+     everywhere, which is better than a bespoke rule for the pills: WCAG 2.4.11 asks for a
+     thicker indicator anyway, and the input and the switch carry 3px without looking heavy. */
+  outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
 }
 
@@ -869,7 +876,10 @@ textarea {
   border: 0;
 }
 
+/* Matches the shared :focus-visible ring above. It needs its own rule only because the radios
+   inside are clipped out of sight, so the ring has to go on the strip rather than on an
+   invisible input - not because it should look any different. */
 .theme-switch:focus-within {
-  outline: 2px solid var(--accent-strong);
+  outline: 3px solid var(--accent-strong);
   outline-offset: 2px;
 }
