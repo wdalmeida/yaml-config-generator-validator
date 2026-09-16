@@ -8,17 +8,34 @@ function tokensFrom(block: string): Record<string, string> {
 }
 
 /**
- * The light and dark palettes as the stylesheet actually declares them. Dark is a merge, not a
- * replacement, which is the point: it inherits every token the dark block does not restate, and
- * that is exactly how `--muted` came to sit at its light-mode value for the whole life of dark
- * mode, three-and-a-bit to one against the surface it was drawn on.
+ * The light and dark palettes as the stylesheet actually declares them.
+ *
+ * Dark is declared twice - once inside the `prefers-color-scheme` query for readers on Auto,
+ * once as `:root[data-theme="dark"]` for readers who picked it explicitly, because CSS cannot
+ * share one declaration block between a media query and a plain rule. Both are returned so a
+ * test can assert they have not drifted apart.
+ *
+ * Dark is a merge over light, not a replacement, which is the point: it inherits every token
+ * the dark blocks do not restate, and that is exactly how `--muted` came to sit at its
+ * light-mode value for the whole life of dark mode, three-and-a-bit to one against the surface
+ * it was drawn on.
  */
-export function palettes(css: string): { light: Record<string, string>; dark: Record<string, string> } {
+export function palettes(css: string): {
+  light: Record<string, string>
+  dark: Record<string, string>
+  darkAuto: Record<string, string>
+  darkExplicit: Record<string, string>
+} {
   const lightBlock = /^:root \{(.*?)^\}/ms.exec(css)
-  const darkBlock = /@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)^ {2}\}/ms.exec(css)
-  if (!lightBlock || !darkBlock) throw new Error('App.css no longer declares its palette on :root - update src/test-color.ts')
+  const darkAutoBlock = /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme='light'\]\) \{(.*?)^ {2}\}/ms.exec(css)
+  const darkExplicitBlock = /^:root\[data-theme='dark'\] \{(.*?)^\}/ms.exec(css)
+  if (!lightBlock || !darkAutoBlock || !darkExplicitBlock) {
+    throw new Error('App.css no longer declares its palette the way src/test-color.ts expects - update both together')
+  }
   const light = tokensFrom(lightBlock[1])
-  return { light, dark: { ...light, ...tokensFrom(darkBlock[1]) } }
+  const darkAuto = tokensFrom(darkAutoBlock[1])
+  const darkExplicit = tokensFrom(darkExplicitBlock[1])
+  return { light, dark: { ...light, ...darkExplicit }, darkAuto, darkExplicit }
 }
 
 type RGB = [number, number, number]

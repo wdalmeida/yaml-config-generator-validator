@@ -111,6 +111,95 @@ The simulation itself is guarded too: a run that mangled the matrices would repo
 differences and pass everything vacuously, so there are two checks that red and green do collapse
 for a deuteranope, and that a neutral grey comes through untouched.
 
+## The theme switch, and why there is no colourblind mode
+
+The header carries a three-way **Auto / Light / Dark** radiogroup (`src/components/ThemeSwitch.tsx`,
+persisted under `theme`). Auto is the default and is the *absence* of a choice: no `data-theme`
+attribute, so `prefers-color-scheme` decides and the page keeps following the OS when it flips at
+sunset. The other two are an override that has to beat the OS in both directions, which is why
+`App.css` states the dark palette twice — once inside the media query guarded with
+`:not([data-theme='light'])`, once as `:root[data-theme='dark']`. CSS cannot share a declaration
+block between a media query and a plain rule, and `light-dark()` resolves to nothing at all on a
+browser that does not know it, which would take the whole palette down rather than degrade.
+`App.contrast.test.ts` asserts the two copies are identical so the duplication cannot drift.
+
+The choice is applied in `main.tsx` **before the first render**, not in an effect. An effect runs
+after paint, so a reader whose theme is the opposite of their OS would get one frame of the wrong
+palette on every load. The usual fix is an inline `<script>` in `index.html`; this app cannot use
+one, because `container/nginx.conf`'s CSP is `default-src 'self'` with no `unsafe-inline` for
+scripts and the browser would refuse to run it.
+
+**There is deliberately no separate colourblind palette.** It was considered and rejected:
+
+- **The states are not carried by colour any more.** Each pill status has its own shape, and
+  every one is also stated in words. A palette toggle would be a third encoding of something
+  already encoded twice, and it would do nothing for monochromacy, a greyscale print, or a
+  projector.
+- **The pairs it could improve are not contrastive.** After the teal, everything that encodes a
+  mutually exclusive state clears the threshold. What is still close — `--error` against
+  `--accent-strong` — is validation text against button chrome. Nobody has to tell those apart to
+  understand the page, so a mode that separated them would buy nothing.
+- **It would be a third palette to maintain and test**, behind a setting most people never find,
+  which is the failure mode of accessibility-as-a-mode: the default stays mediocre because the
+  toggle exists. The default is the thing that has to be right.
+
+If a future state genuinely cannot be given a shape, the answer is to add it to
+`CONTRASTIVE_SETS` in `App.colorblind.test.tsx` and fix the default palette until it passes —
+not to add a mode.
+
+### One focus ring, and why it sets no radius
+
+Everything focusable shares one `:focus-visible` rule — the pills, the text fields, the buttons,
+the links. `.theme-switch` is the single exception, and only because its radios are clipped out
+of sight: the ring has to go on the strip (`:focus-within`) rather than on an invisible input.
+
+It is **3px**, and that number was measured in a browser rather than argued about. At 2px the
+ring read clearly on a text input and on the theme switch and noticeably weaker on a pill —
+which is the hard case, and not by accident: a pill is a capsule carrying its own 1px grey
+border, so the ring lands as a second thin concentric line 2px outside the first, in a row of
+six near-identical capsule outlines all competing with it. Four candidates were rendered side by
+side on adjacent pills (2px, 3px, 2px plus a soft halo, and a border-hugging variant); 3px was
+the one that fixed the pill without over-weighting the input or the switch, so it went on the
+shared rule rather than becoming a bespoke `.config-tab` rule. WCAG 2.4.11 wants a thicker
+indicator anyway.
+
+The rule sets a colour and an offset and **deliberately no `border-radius`**. An outline already
+follows the element's own border curve, so one buys nothing — and on a blanket rule it *replaces*
+the element's radius for as long as it has focus. `.config-tab` is `border-radius: 999px`, so
+tabbing to a pill snapped it from a capsule to an 8px rounded rectangle: that reads as the layout
+glitching, not as a focus indicator. `App.layout.test.ts` asserts it stays out.
+
+The ring is `--accent-strong` rather than `--accent`, which matters here: a focus indicator is a
+non-text UI component and WCAG 1.4.11 asks 3:1 of it, and the brand orange is 2.99:1 on the page
+background — under the bar by a hair, on the one thing that should never be marginal.
+
+## Scrolling and reflow
+
+`.yaml-panel` is a sticky flex column with `max-height: calc(100vh - 48px)`. It has to clip, and
+the field inside it has to be allowed to shrink:
+
+```css
+.yaml-panel      { overflow: hidden; }
+.yaml-editor-host { flex: 1 1 240px; min-height: 0; }
+```
+
+Both halves are load-bearing. A flex item will not shrink below its `min-height`, which defaulted
+to a hard `240px`, so once the panel's contents exceeded `max-height` the overflow was laid out
+past the panel's bottom edge with **no scroll container anywhere** — it ran off the box and over
+whatever was beneath it. The Kubernetes pill showed it worst: an extra warning paragraph eating
+the height, and about a hundred lines of manifests. `flex: 1 1 240px` keeps the field opening at a
+usable size while letting it give way; CodeMirror's own `.cm-scroller` then does the scrolling.
+
+Inline `<code>` gets the same treatment for the horizontal axis. A file path and a shell command
+are single unbreakable tokens; left alone they push their container wider than the column and the
+whole document gains a horizontal scrollbar, which WCAG 1.4.10 rules out. `.github-path code` and
+`.step-command code` scroll in their own box, and `.step-command` carries `min-width: 0` so they
+are allowed to — the same trap as `min-height` above.
+
+`src/App.layout.test.ts` asserts every one of those declarations. **It cannot assert that
+anything actually scrolls**: jsdom performs no layout, every element is 0×0 and nothing overflows
+anything. Confirming the behaviour is step 6 of the manual pass below.
+
 ## The manual pass
 
 Do this before shipping anything that changes the shape of a screen. None of it is automated
@@ -131,14 +220,22 @@ npm run dev
    say which row it is.
 4. **Copy something.** The confirmation is a live region, so it is announced without moving
    focus. If you hear nothing, it regressed.
-5. **Look at it in greyscale.** macOS: System Settings → Accessibility → Display → Colour
+5. **Make the window short** (about 500px tall) with the columns side by side, open the
+   Kubernetes pill, and fill in a tenant and a product. The manifests must scroll *inside* the
+   panel; nothing should be drawn below the panel's bottom edge, and the page itself should not
+   gain a horizontal scrollbar. Then try a very long `owner/repo` — the path should scroll in its
+   own box rather than widening the card.
+6. **Cycle the theme switch** through Light, Dark and Auto with your OS on the opposite setting,
+   and reload on each. There should be no flash of the wrong palette, and the scrollbars and
+   `<select>` popups should match the page.
+7. **Look at it in greyscale.** macOS: System Settings → Accessibility → Display → Colour
    Filters → Greyscale. Every state should still be readable. If two things become the same
    thing, colour was carrying meaning on its own somewhere.
-6. **Zoom to 200%** and then to 400% (WCAG 1.4.10 asks for 320px-equivalent reflow). The columns
+8. **Zoom to 200%** and then to 400% (WCAG 1.4.10 asks for 320px-equivalent reflow). The columns
    collapse at 860px; nothing should need horizontal scrolling except the YAML field.
-7. **Switch to dark mode** and repeat 1 and 3. The palette differs, and `--muted` was wrong there
+9. **Switch to dark mode** and repeat 1 and 3. The palette differs, and `--muted` was wrong there
    for the whole life of dark mode without anyone noticing.
-8. **Turn on Windows High Contrast / forced colors** if you have it. The focus ring is re-stated
+10. **Turn on Windows High Contrast / forced colors** if you have it. The focus ring is re-stated
    in `Highlight` for this; most other colour is given up to the OS by design.
 
 ## What was fixed in the first pass

@@ -4,6 +4,7 @@ import { KubernetesWorkspace } from './components/KubernetesWorkspace'
 import { OnboardingWorkspace } from './components/OnboardingWorkspace'
 import { usePersistedState } from './lib/persisted-state'
 import { StatusDraftIcon, StatusEmptyIcon, StatusValidIcon } from './components/icons'
+import { ThemeSwitch } from './components/ThemeSwitch'
 import { getNavEntry, NAV_ENTRIES, navStatus } from './nav'
 import './App.css'
 
@@ -37,7 +38,10 @@ function App() {
       </a>
 
       <main className="app">
-        <h1>YAML Config Generator &amp; Validator</h1>
+        <div className="app-header">
+          <h1>YAML Config Generator &amp; Validator</h1>
+          <ThemeSwitch />
+        </div>
 
         <nav className="config-tabs" aria-label="File type">
           {NAV_ENTRIES.map((navEntry) => {

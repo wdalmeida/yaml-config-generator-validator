@@ -1,5 +1,16 @@
+/* Tells the browser which palette to render its own parts in - form controls, scrollbars, the
+   canvas behind the page. It has to follow the same three states App.css uses, or a reader who
+   picks Light on a dark OS gets a light page with dark scrollbars and a dark <select> popup. */
 :root {
   color-scheme: light dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 * {

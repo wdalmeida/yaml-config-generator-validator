@@ -19,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 import css from './App.css?raw'
 import { contrast, palettes } from './test-color'
 
-const { light: LIGHT, dark: DARK } = palettes(css)
+const { light: LIGHT, dark: DARK, darkAuto, darkExplicit } = palettes(css)
 
 // Text pairs the stylesheet really renders. Each one is a `color:` and the surface it sits on.
 const TEXT_PAIRS: Array<[fg: string, bg: string]> = [
@@ -74,6 +74,21 @@ describe.each([
   // deliberately shared between themes should be shared on purpose, not by omission.
   it('redefines every colour token that needs a different value in the dark', () => {
     expect(Object.keys(tokens)).toContain('--muted')
+  })
+})
+
+// The dark palette is written out twice - inside the prefers-color-scheme query for readers on
+// Auto, and again as :root[data-theme="dark"] for readers who chose it - because CSS cannot
+// share a declaration block between a media query and a plain rule. Everything above checks the
+// explicit copy, so without this the media-query copy could drift and only readers on Auto,
+// which is the default, would see the difference.
+describe('the two dark blocks', () => {
+  it('declare exactly the same tokens', () => {
+    expect(Object.keys(darkAuto).sort()).toEqual(Object.keys(darkExplicit).sort())
+  })
+
+  it('declare exactly the same values', () => {
+    expect(darkAuto).toEqual(darkExplicit)
   })
 })
 
