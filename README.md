@@ -42,12 +42,40 @@ npm run dev
 npm test              # or: npm run test:coverage
 ```
 
+### Dev container
+
+`.devcontainer/` has the whole toolchain prebuilt — Node 24, every scanner the workflows run,
+`just`, podman, plus Claude Code and opencode — so *Reopen in Container* (or
+`npx @devcontainers/cli up --workspace-folder .`) gets you a working `just ci` with nothing
+installed on the host. See [Development container](docs/devcontainer.md).
+
+### Running CI locally
+
+`justfile` mirrors every check in `.github/workflows/` — same tools, same flags, and each tool
+version is read straight out of the workflow file that pins it, so there is no second list to
+keep in sync when Renovate bumps one.
+
+```sh
+brew install just     # if you don't have it already
+just install          # the Brewfile's tools + npm deps, then a version report
+just doctor           # what's installed, and whether it matches what the workflows pin
+just ci               # everything ci.yml runs, every job reported pass/fail
+just supply-chain     # SBOM, both OSV passes, Semgrep
+just container        # hadolint, image build, smoke test, Trivy, OSV
+just artifacts        # what the run produced, with each report's finding count
+```
+
+Reports land in `.ci-out/` — the same SARIF, SBOM and JSON artifacts the workflows upload.
+`just` on its own lists every recipe, including the individual ones (`just lint`, `just zizmor`,
+`just image-smoke`, …) for iterating on one check at a time.
+
 ## License
 
 [MIT](LICENSE)
 
 ## Docs
 
+- [Development container](docs/devcontainer.md) — the prebuilt toolchain, and how its tool versions stay in step with CI
 - [Adding or updating a config schema](docs/adding-a-schema.md)
 - [Adding or updating onboarding steps](docs/adding-onboarding-steps.md) — the checklist file format and its action types
 - [Kubernetes resources](docs/kubernetes-resources.md) — what the Kubernetes pill renders, and what in it is still a placeholder
