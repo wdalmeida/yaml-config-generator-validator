@@ -53,8 +53,17 @@
   font-family: system-ui, sans-serif;
 }
 
+/* The palette has three states, not two, and the reader chooses which.
+   - No data-theme on <html> is "Auto": the OS decides, via the media query below.
+   - data-theme="light" has to beat a dark OS, so the media query excludes it.
+   - data-theme="dark" has to beat a light OS, so it is restated outside the media query.
+   The dark declarations are therefore written twice. CSS has no way to share one block between
+   a media query and a plain rule, and the alternative - the light-dark() function - resolves to
+   nothing at all on a browser that doesn't know it, which would take the whole palette down
+   rather than degrade. App.contrast.test.ts asserts the two copies are identical, so the
+   duplication cannot drift. src/lib/theme.ts sets the attribute. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --border: #3a3a40;
     --border-control: #6c6c78;
     --surface: #1c1c1f;
@@ -74,6 +83,27 @@
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
   }
+}
+
+:root[data-theme='dark'] {
+  --border: #3a3a40;
+  --border-control: #6c6c78;
+  --surface: #1c1c1f;
+  --surface-raised: #232326;
+  --error: #f87171;
+  --success: #5eead4;
+  --warn: #fbbf24;
+  --accent: #e08863;
+  --accent-hover: #eb9c7a;
+  --accent-soft: rgba(224, 136, 99, 0.16);
+  --accent-contrast: #1c1c1f;
+  --accent-strong: #e08863;
+  /* Was left at the light-mode #6b7280, which is 3.2:1 on the raised dark surface - the one
+     token the dark block forgot. Same hue and saturation, lifted until it passes. */
+  --muted: #9099ab;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .config-tabs {
@@ -180,6 +210,12 @@
   max-height: calc(100vh - 2 * var(--space-6));
   display: flex;
   flex-direction: column;
+  /* Load-bearing, with .yaml-editor-host's `flex: 1 1 240px; min-height: 0` below. Without
+     both, a panel whose contents are taller than max-height cannot shrink, so it spills out of
+     its own sticky box and there is nothing to scroll: the overflow is laid out past the
+     panel's bottom edge, over whatever is beneath it. The Kubernetes pill showed it worst - it
+     has an extra warning paragraph eating the height and renders about a hundred lines. */
+  overflow: hidden;
   padding: var(--space-6);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -207,8 +243,16 @@
 }
 
 .yaml-editor-host {
-  flex: 1;
-  min-height: 240px;
+  /* basis 240px so the field opens at a usable size when the panel is sized by its content,
+     grow to take the spare room, and - the part that was missing - shrink when there isn't
+     any. A flex item will not shrink past its content unless min-height says it may, and the
+     240px used to be a hard floor, which is what forced the overflow. CodeMirror's own
+     .cm-scroller then does the scrolling inside whatever height it ends up with. */
+  flex: 1 1 240px;
+  min-height: 0;
+  /* Stops a scroll that reaches the end of the document from carrying on and scrolling the
+     page behind it, which reads as the panel "jumping" once it bottoms out. */
+  overscroll-behavior: contain;
 }
 
 .yaml-editor-host .cm-editor {
@@ -216,9 +260,11 @@
 }
 
 .yaml-editor-fallback {
-  flex: 1;
+  /* Matched to .yaml-editor-host above so the field does not resize when CodeMirror finishes
+     loading and replaces this. A textarea scrolls on its own. */
+  flex: 1 1 240px;
   width: 100%;
-  min-height: 240px;
+  min-height: 0;
   padding: var(--space-3);
   box-sizing: border-box;
   font-family: ui-monospace, monospace;
@@ -301,8 +347,13 @@ textarea {
   margin: 0;
 }
 
+/* A path is one unbreakable token, so it cannot wrap. Left alone it pushes the card wider than
+   the column and the whole page gains a horizontal scrollbar - the one thing that must never
+   happen (see docs/accessibility.md on reflow). It scrolls in its own box instead. */
 .github-path code {
   font-size: 0.95rem;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .github-path span {
@@ -647,12 +698,21 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   font-size: 0.8rem;
+  /* The row must be allowed to be narrower than its content for the <code> below to scroll
+     instead of pushing the page wide - an inline-flex item's default min-width is auto, the
+     same trap as min-height on the YAML field. */
+  max-width: 100%;
+  min-width: 0;
 }
 
+/* Same as .github-path code: a shell command does not wrap at spaces here (it is one <code>
+   on one line by design, so it can be copied verbatim), and some of them are long. */
 .step-command code {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .step-command button {
@@ -746,4 +806,64 @@ textarea {
   font-weight: 600;
   margin-bottom: var(--space-1);
   font-size: 0.9rem;
+}
+
+
+/* The theme switch, and the header row that holds it beside the title. Wraps rather than
+   shrinks at narrow widths - the title is the thing that should keep its size. */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* Styled like the onboarding path switch: one bordered strip, the active option filled. The
+   radios themselves are hidden from sight but NOT from the accessibility tree or the tab
+   order - they are still what the label activates and what a screen reader reads, and
+   :focus-within below is what makes the keyboard focus visible on the strip. */
+.theme-switch {
+  display: flex;
+  gap: 0;
+  padding: 2px;
+  margin: 0;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+}
+
+.theme-switch > legend {
+  padding: 0;
+}
+
+.theme-switch label {
+  padding: var(--space-1) var(--space-3);
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.theme-switch label.active {
+  background: var(--accent-strong);
+  color: var(--accent-contrast);
+}
+
+/* Clipped to a point rather than display:none, so the input keeps its place in the tab order
+   and its role in the accessibility tree. Same technique as .visually-hidden. */
+.theme-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+.theme-switch:focus-within {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
 }
