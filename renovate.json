@@ -73,6 +73,24 @@
     },
     {
       "customType": "regex",
+      "description": "Helm, used by ci.yml's helm job to render charts/ (and by the justfile's mirror of it) via a HELM_VERSION env var. Installed from get.helm.sh rather than GitHub Releases - the tarball and its .sha256sum both live there - but the versions are the same tags, so github-releases is still the right datasource.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": ["HELM_VERSION:\\s*(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "helm/helm",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "kubeconform, which validates ci.yml's rendered chart manifests against the Kubernetes API schemas, via a KUBECONFORM_VERSION env var.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": ["KUBECONFORM_VERSION:\\s*(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "yannh/kubeconform",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
       "description": "Trivy, the container image scanner, downloaded and checksum-verified directly from GitHub Releases in container.yml via a TRIVY_VERSION env var - not aquasecurity/trivy-action, which fetches its own binary at runtime, the same nested-fetch problem that ruled out anchore/sbom-action for Syft above.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
@@ -116,7 +134,7 @@
       "automerge": true
     },
     {
-      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan/sca jobs would fail outright if a bump broke anything. Scoped by file so the devcontainer's own three pins, which no CI job exercises, don't inherit that automerge - see the rule below.",
+      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner, Helm, kubeconform) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor/helm jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan/sca jobs would fail outright if a bump broke anything. Scoped by file so the devcontainer's own three pins, which no CI job exercises, don't inherit that automerge - see the rule below.",
       "matchManagers": ["custom.regex"],
       "matchFileNames": [".github/workflows/**"],
       "groupName": "workflow tool versions",

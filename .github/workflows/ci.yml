@@ -75,6 +75,81 @@ jobs:
       - run: npm ci
       - run: npm run lint:schemas
 
+  # Renders the Helm chart and checks every manifest it produces against the real Kubernetes
+  # API schemas. `helm lint` on its own only inspects the chart's own structure - it passes a
+  # Deployment with a misspelled field quite happily - so kubeconform (Apache-2.0, FOSS) is
+  # what actually catches a broken manifest. Both are checksum-verified binaries, the same
+  # pattern as gitleaks above.
+  #
+  # Every values file under charts/*/ci/ is rendered as well as the defaults: the optional
+  # templates (Ingress, HPA, PDB, NetworkPolicy) are off by default, so without those a
+  # template that only breaks when they are enabled would reach main untested.
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Helm and kubeconform (checksum-verified)
+        env:
+          HELM_VERSION: 4.3.0
+          KUBECONFORM_VERSION: 0.8.0
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+
+          # Helm publishes a .sha256sum beside each asset, already in `sha256sum -c` format.
+          helm_asset="helm-v${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL -o "${tmp}/${helm_asset}" "https://get.helm.sh/${helm_asset}"
+          curl -fsSL -o "${tmp}/${helm_asset}.sha256sum" "https://get.helm.sh/${helm_asset}.sha256sum"
+          ( cd "$tmp" && sha256sum -c "${helm_asset}.sha256sum" )
+          tar -xzf "${tmp}/${helm_asset}" -C "$tmp" linux-amd64/helm
+          install -m 0755 "${tmp}/linux-amd64/helm" "${tmp}/helm"
+
+          kc_asset="kubeconform-linux-amd64.tar.gz"
+          kc_base="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
+          curl -fsSL -o "${tmp}/${kc_asset}" "${kc_base}/${kc_asset}"
+          curl -fsSL -o "${tmp}/CHECKSUMS" "${kc_base}/CHECKSUMS"
+          ( cd "$tmp" && grep " ${kc_asset}\$" CHECKSUMS | sha256sum -c - )
+          tar -xzf "${tmp}/${kc_asset}" -C "$tmp" kubeconform
+          chmod +x "${tmp}/kubeconform"
+
+          echo "$tmp" >> "$GITHUB_PATH"
+
+      - name: helm lint
+        run: |
+          set -euo pipefail
+          for chart in charts/*/; do
+            helm lint "$chart"
+            for values in "$chart"ci/*-values.yaml; do
+              [ -e "$values" ] || continue
+              helm lint "$chart" --values "$values"
+            done
+          done
+
+      # -strict rejects a manifest with any field the schema doesn't know, which is the whole
+      # point: a typo in a Deployment field is silently ignored by the API server otherwise.
+      # The pinned -kubernetes-version picks the schema set to check against; it is not a
+      # statement about which clusters the chart supports (Chart.yaml's kubeVersion is).
+      - name: helm template | kubeconform
+        run: |
+          set -euo pipefail
+          for chart in charts/*/; do
+            echo "::group::${chart} (default values)"
+            helm template release "$chart" \
+              | kubeconform -strict -summary -kubernetes-version 1.31.0
+            echo "::endgroup::"
+            for values in "$chart"ci/*-values.yaml; do
+              [ -e "$values" ] || continue
+              echo "::group::${chart} ($(basename "$values"))"
+              helm template release "$chart" --values "$values" \
+                | kubeconform -strict -summary -kubernetes-version 1.31.0
+              echo "::endgroup::"
+            done
+          done
+
   markdown:
     runs-on: ubuntu-latest
     timeout-minutes: 10

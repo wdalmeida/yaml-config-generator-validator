@@ -1,0 +1,26 @@
+apiVersion: v2
+name: yaml-config-generator-validator
+description: Static site for filling out and validating the YAML config files our software requires
+type: application
+
+# The chart's version, bumped independently of the app it deploys: a values or template
+# change is a chart release even when the image is untouched.
+version: 0.1.0
+
+# The app has no tagged release yet (release-please's standing PR), and the published image
+# carries `latest` plus an immutable `sha-<short>` per commit. `latest` is therefore the
+# honest default rather than a pretend semver - pin `image.digest` (or a `sha-` tag) for
+# anything you care about, which the chart supports directly.
+appVersion: "latest"
+
+# Ingress networking.k8s.io/v1 (1.19), PodDisruptionBudget policy/v1 (1.21) and a GA
+# seccompProfile (1.19) are the floor; the -0 suffix lets pre-release cluster versions match.
+kubeVersion: ">=1.21.0-0"
+
+home: https://github.com/wdalmeida/yaml-config-generator-validator
+sources:
+  - https://github.com/wdalmeida/yaml-config-generator-validator
+keywords:
+  - yaml
+  - static-site
+  - nginx

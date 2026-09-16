@@ -1,0 +1,42 @@
+{{ .Chart.Name }} is deployed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Image: {{ include "ycgv.image" . }}
+{{- if not .Values.image.digest }}
+
+  This is a tag, which can be moved under you. Pin image.digest instead for anything that
+  matters - it is also the only form the image's Sigstore provenance and SBOM attestations
+  can be verified against:
+
+    gh attestation verify oci://{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }} \
+      --repo wdalmeida/yaml-config-generator-validator
+{{- end }}
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+{{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+{{- end }}
+{{- end }}
+{{- else if eq .Values.service.type "ClusterIP" }}
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "ycgv.fullname" . }} 8080:{{ .Values.service.port }}
+
+  then open http://localhost:8080
+{{- else if contains "NodePort" .Values.service.type }}
+
+  export NODE_PORT=$(kubectl --namespace {{ .Release.Namespace }} get svc {{ include "ycgv.fullname" . }} -o jsonpath="{.spec.ports[0].nodePort}")
+  export NODE_IP=$(kubectl --namespace {{ .Release.Namespace }} get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "http://$NODE_IP:$NODE_PORT"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+
+  kubectl --namespace {{ .Release.Namespace }} get svc {{ include "ycgv.fullname" . }} -w
+
+  and open the external IP once it is assigned.
+{{- end }}
+
+Health: every pod answers GET /healthz with "ok" - that is what both probes use.
+
+The site is static and talks to no backend. The browser calls api.github.com directly, so
+the cluster needs no egress for it{{ if not .Values.networkPolicy.enabled }} - networkPolicy.enabled=true writes that down as a
+deny-all-egress rule, if your CNI enforces NetworkPolicy{{ end }}.

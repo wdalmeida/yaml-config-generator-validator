@@ -1,0 +1,180 @@
+# Defaults for yaml-config-generator-validator.
+#
+# The thing being deployed is a static site: nginx, a directory of files Vite produced, and
+# nothing else. No backend, no database, no secrets, no outbound connections - the browser
+# talks to api.github.com directly, the pod never does. Most of what follows is about making
+# the cluster enforce that, rather than about configuring an application that has nothing to
+# configure.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/wdalmeida/yaml-config-generator-validator
+  # Empty means the chart's appVersion. Both are a moving tag; prefer `digest` below, or a
+  # `sha-<short>` tag, for anything you would be unhappy to see change under you.
+  tag: ""
+  # Takes precedence over `tag` when set, e.g. "sha256:abc123...". The image ships SLSA
+  # provenance and an SBOM attestation, both verifiable against a digest and neither
+  # meaningful against a moving tag (`gh attestation verify` - see docs/container.md).
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# GHCR packages start private even on a public repo, so a fresh install of this chart against
+# an un-published package will sit in ImagePullBackOff until either the package is made
+# public or a pull secret is named here.
+imagePullSecrets: []
+  # - name: ghcr-credentials
+
+# Only the Alpine image is published (see docs/container.md): neither vulnerability scanner
+# in this repo's CI can read the Red Hat / Project Hummingbird one yet, so it is built and
+# smoke-tested but not pushed. To deploy that variant, build `Containerfile.redhat`, push it
+# to your own registry, and point `image.repository` at it. No other value changes: the
+# chart deliberately pins no UID, so it works with that image's 65532:0 as-is.
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The app never calls the Kubernetes API. Mounting a token would hand a credential to a
+  # process that has no use for it, so it is off here and at the pod level below.
+  automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 80
+  # The container listens on 8080, not 80: binding a privileged port would need
+  # CAP_NET_BIND_SERVICE, and the pod drops every capability.
+  targetPort: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: yaml-config-tls
+  #    hosts:
+  #      - chart-example.local
+  #
+  # Serving under a sub-path (say /tools/yaml) works, because the Vite build uses a relative
+  # base (`base: './'` in vite.config.ts) - every asset URL in index.html is relative, so it
+  # resolves against whatever prefix the browser is on. What it needs from the ingress is a
+  # rewrite to `/`, since the container serves the site at its root. Without the rewrite the
+  # controller forwards /tools/yaml/ and nginx returns index.html via its SPA fallback, but
+  # then serves it for every asset path too, and the page loads blank.
+
+# Real defaults rather than the customary empty map: this is one nginx worker set serving a
+# handful of static files, and its footprint is known rather than guessed. No CPU limit -
+# throttling a request-serving process to save CPU it only uses in bursts buys nothing here -
+# but a memory limit, because a leak should kill the pod rather than the node.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+# Both probes hit /healthz, which container/nginx.conf answers with a literal "200 ok" and no
+# access log entry. There is no startupProbe: nginx is listening within a second of exec, and
+# a startup probe exists for processes that aren't.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+  # Deliberately no runAsUser. Both images already declare a numeric non-root user in their
+  # own config (101 for Alpine, 65532 for Red Hat), so `runAsNonRoot: true` is enforceable
+  # without the chart guessing which one it is - and on OpenShift, where the restricted-v2
+  # SCC assigns its own UID from the namespace range, an explicit runAsUser is what gets the
+  # pod rejected. Set it here if your policy requires one.
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# nginx writes its pid and any request temp files under /tmp and nowhere else, which is what
+# makes readOnlyRootFilesystem viable. This volume is that /tmp. A few hundred KB is the real
+# usage; the limit exists so a pathological request body can't fill the node's disk.
+tmpVolume:
+  sizeLimit: 16Mi
+  # "" for the node's disk, "Memory" for a tmpfs (counts against the pod's memory limit).
+  medium: ""
+
+# maxUnavailable: 0 keeps the site up through a rollout, which costs one extra pod's worth of
+# scheduling room and nothing else for a workload this small.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# A NetworkPolicy that says out loud what the image already does: accept HTTP on the
+# container port, make no outbound connection of any kind. Not even DNS - nginx resolves
+# nothing here, since the config has no resolver and proxies nothing. Off by default because
+# a cluster whose CNI doesn't implement NetworkPolicy will silently ignore it, and a rule you
+# believe is enforced but isn't is worse than no rule.
+networkPolicy:
+  enabled: false
+  # Empty means "from anywhere", which is what an ingress controller in an arbitrary
+  # namespace needs. Narrow it to your controller once you know where it runs.
+  ingressFrom: []
+  #  - namespaceSelector:
+  #      matchLabels:
+  #        kubernetes.io/metadata.name: ingress-nginx
+
+# Spread replicas across nodes when there is more than one. ScheduleAnyway, not
+# DoNotSchedule: a single-node cluster should still be able to run two replicas.
+#
+# No labelSelector here - the template always scopes each constraint to this release's own
+# pods, which is the only selector that makes sense and the one that is easy to get wrong
+# (an empty matchLabels selects every pod in the namespace). Set `affinity` instead if you
+# need a spread rule this shape can't express.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# Extra environment for the container. The app needs none - it is a static build, and
+# anything configurable was baked in at `npm run build` time.
+env: []
