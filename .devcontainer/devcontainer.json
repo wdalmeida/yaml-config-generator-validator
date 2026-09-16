@@ -1,0 +1,73 @@
+{
+  "name": "yaml-config-generator-validator",
+
+  // Build context is the repository root, not .devcontainer/: the image derives the CI tool
+  // versions by running `just install-pinned` against the real justfile and workflow files
+  // (see Dockerfile), so those have to be in the context. Docker ignores .containerignore -
+  // that file is buildah's, for the separate Containerfile build - so a large node_modules on
+  // the host only makes the first build's context transfer slower; nothing else reads it.
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  "remoteUser": "node",
+
+  // `just container` builds a container from inside this one, and that needs --privileged:
+  // setting up the nested user namespace is refused without it (`newuidmap: write to uid_map
+  // failed: Operation not permitted`), and extra capabilities alone don't cover it - granting
+  // cap_setuid/cap_setgid was tested and still fails. The official docker-in-docker
+  // devcontainer feature requires the same flag for the same reason.
+  //
+  // On a rootless podman host this is confined to your own user namespace - the container can
+  // do nothing you couldn't. Under Docker's root daemon it is a real grant. If you'd rather not
+  // give it, delete the line: everything except the `just container` group still works, and
+  // those recipes run fine on the host. See docs/devcontainer.md.
+  "runArgs": ["--privileged"],
+
+  // Named volumes, not bind mounts of your host's dotfiles: the container gets its own
+  // credentials and caches rather than reaching into the host's. Log in once inside
+  // (`gh auth login`, `claude`, `opencode auth login`) and it survives rebuilds.
+  // Swap any line for a bind mount (e.g. "source=${localEnv:HOME}/.claude,...,type=bind") if
+  // you would rather share the host's session.
+  "mounts": [
+    "source=ycgv-claude,target=/home/node/.claude,type=volume",
+    "source=ycgv-opencode-data,target=/home/node/.local/share/opencode,type=volume",
+    "source=ycgv-opencode-config,target=/home/node/.config/opencode,type=volume",
+    "source=ycgv-gh,target=/home/node/.config/gh,type=volume",
+    // Podman's image store, so a `just image-build` isn't re-pulling its bases every rebuild.
+    "source=ycgv-containers,target=/home/node/.local/share/containers,type=volume",
+    // Trivy's vulnerability database: ~110 MB, re-downloaded from a rate-limited registry
+    // whenever it's missing. container.yml caches it per day for exactly this reason.
+    "source=ycgv-trivy,target=/home/node/.cache/trivy,type=volume"
+  ],
+
+  "containerEnv": {
+    // Rootless podman's runtime directory. Nothing in this container runs systemd-logind to
+    // create one, so the Dockerfile makes /run/user/1000 and this points podman at it.
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    // Keeps Claude Code's config and credentials inside the volume above, rather than in
+    // ~/.claude.json outside it (which a rebuild would discard).
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+
+  // The image already has every tool; this installs the repo's own dependencies and prints
+  // the tool report, which is also what tells you if a workflow pin has moved since the image
+  // was built (`just install-pinned <tool>` closes that gap without a rebuild).
+  "postCreateCommand": "npm ci && just doctor",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "oxc.oxc-vscode",
+        "nefrob.vscode-just-syntax",
+        "redhat.vscode-yaml",
+        "github.vscode-github-actions"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

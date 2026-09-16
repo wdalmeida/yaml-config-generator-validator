@@ -23,7 +23,9 @@ jobs:
   # Static lint of the Containerfile itself (hadolint, GPL-3.0/FOSS): missing USER,
   # unpinned base tags, shell anti-patterns in RUN, non-numeric UIDs. Installed as a
   # checksum-verified binary rather than via a wrapper action - same pattern as ci.yml's
-  # gitleaks and supply-chain.yml's Syft.
+  # gitleaks and supply-chain.yml's Syft. Also covers .devcontainer/Dockerfile: nothing
+  # else in CI builds that image, so this lint is the only thing standing between it and
+  # silent rot (`just hadolint` runs the same pair locally).
   hadolint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -53,7 +55,7 @@ jobs:
 
       - name: hadolint (SARIF, for code scanning)
         id: hadolint
-        run: hadolint --format sarif Containerfile > hadolint-results.sarif
+        run: hadolint --format sarif Containerfile .devcontainer/Dockerfile > hadolint-results.sarif
         continue-on-error: true
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -16,6 +16,10 @@ coverage
 # Locally-generated scan/report output (CI produces these fresh each run)
 *.sarif
 sbom.cdx.json
+# `just` writes every local CI report/artifact here, and puts workflow-pinned tool binaries
+# in .ci-tools (`just install-pinned`)
+.ci-out/
+.ci-tools/
 gitleaks
 gitleaks_*.tar.gz
 gitleaks_*_checksums.txt

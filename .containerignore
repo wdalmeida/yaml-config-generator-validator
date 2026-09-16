@@ -5,6 +5,10 @@
 
 .git
 .github
+# ...except the workflow files: .devcontainer/Dockerfile reads the pinned tool versions out
+# of them at build time (via `just install-pinned`). The Containerfile build never copies
+# them, so this only widens what that build *could* see, by about 40 KB.
+!.github/workflows
 node_modules
 dist
 dist-ssr
