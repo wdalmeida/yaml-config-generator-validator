@@ -127,14 +127,14 @@ export function OnboardingWorkspace({ definition, onOpenConfig, onSeeded }: Onbo
           </label>
           <label className={path === 'ui' ? 'active' : undefined}>
             <input type="radio" name="step-path" value="ui" checked={path === 'ui'} onChange={() => setPath('ui')} />
-            {definition.consoleLabel}
+            UI
           </label>
         </fieldset>
 
         {path === 'ui' && (
           <p className="github-hint">
-            {definition.consoleLabel} links open in a new tab. To keep this checklist beside it,
-            split your browser window — or just drag the tab out into a second window.
+            Links open in a new tab. To keep this checklist beside one, split your browser
+            window — or just drag the tab out into a second window.
           </p>
         )}
 

@@ -80,8 +80,8 @@ describe('OnboardingWorkspace', () => {
   })
 
   describe('the CLI / UI switch', () => {
-    const cliStep = definition.steps.find((s) => s.cli && !s.ui)!
-    const uiStep = definition.steps.find((s) => s.ui && !s.cli)!
+    const cliOnlyStep = definition.steps.find((s) => s.cli && !s.ui)!
+    const uiOnlyStep = definition.steps.find((s) => s.ui && !s.cli)!
     const bothStep = definition.steps.find((s) => s.cli && s.ui)!
 
     it('opens on the command line route', () => {
@@ -89,50 +89,71 @@ describe('OnboardingWorkspace', () => {
       expect(screen.getByRole('radio', { name: 'Command line' })).toBeChecked()
     })
 
-    it('shows only the selected route’s instructions', () => {
+    // Generic on purpose: a step's UI route is often some interface other than the console
+    // (a Jira form, an access portal), so naming the console here would be wrong.
+    it('labels the routes generically, not after any one console', () => {
+      renderWorkspace()
+      expect(screen.getByRole('radio', { name: 'UI' })).toBeInTheDocument()
+      expect(screen.queryByRole('radio', { name: 'OpenShift console' })).not.toBeInTheDocument()
+    })
+
+    it('shows only the selected route when the step documents both', () => {
       renderWorkspace()
       expect(screen.getByText(bothStep.cli!.instructions[0])).toBeInTheDocument()
       expect(screen.queryByText(bothStep.ui!.instructions[0])).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+      fireEvent.click(screen.getByRole('radio', { name: 'UI' }))
 
       expect(screen.getByText(bothStep.ui!.instructions[0])).toBeInTheDocument()
       expect(screen.queryByText(bothStep.cli!.instructions[0])).not.toBeInTheDocument()
     })
 
     it('hides a command from a reader who asked for the UI route', () => {
+      // A step that documents *both*, so there is a genuine choice to honour - unlike the
+      // CLI-only step below, whose command stays put precisely because there is no alternative.
+      const command = bothStep.cli!.actions.find((a) => a.type === 'command')!
+      const label = new RegExp(`Copy${command.label ? ` ${command.label}` : ''}`, 'i')
+
       renderWorkspace()
-      expect(screen.getByRole('button', { name: /Copy install the toolchain/i })).toBeInTheDocument()
+      const row = () => screen.getByText(bothStep.title).closest('li')!
+      expect(within(row()).getByRole('button', { name: label })).toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+      fireEvent.click(screen.getByRole('radio', { name: 'UI' }))
 
-      expect(screen.queryByRole('button', { name: /Copy install the toolchain/i })).not.toBeInTheDocument()
+      expect(within(row()).queryByRole('button', { name: label })).not.toBeInTheDocument()
     })
 
-    it('says so rather than going blank when a step only documents the other route', () => {
+    it('still shows a step’s only route when there is no choice to make', () => {
       renderWorkspace()
+      fireEvent.click(screen.getByRole('radio', { name: 'UI' }))
 
-      // cliStep has no UI route, so switching to UI should explain itself.
-      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
-
-      const row = screen.getByText(cliStep.title).closest('li')!
-      expect(within(row).getByText(/Documented for the CLI route only/)).toBeInTheDocument()
+      // cliOnlyStep has no UI route, so its commands stay visible rather than vanishing.
+      const row = screen.getByText(cliOnlyStep.title).closest('li')!
+      expect(within(row).getByText(cliOnlyStep.cli!.instructions[0])).toBeInTheDocument()
+      expect(within(row).getByText('CLI only')).toBeInTheDocument()
     })
 
     it('does the same in the other direction', () => {
       renderWorkspace()
 
-      const row = screen.getByText(uiStep.title).closest('li')!
-      expect(within(row).getByText(/Documented for the UI route only/)).toBeInTheDocument()
+      const row = screen.getByText(uiOnlyStep.title).closest('li')!
+      expect(within(row).getByText(uiOnlyStep.ui!.instructions[0])).toBeInTheDocument()
+      expect(within(row).getByText('UI only')).toBeInTheDocument()
+    })
+
+    it('does not tag a step that documents both routes', () => {
+      renderWorkspace()
+      const row = screen.getByText(bothStep.title).closest('li')!
+      expect(within(row).queryByText(/only$/)).not.toBeInTheDocument()
     })
 
     it('remembers the choice across a remount', () => {
       const { unmount } = renderWorkspace()
-      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+      fireEvent.click(screen.getByRole('radio', { name: 'UI' }))
       unmount()
 
       renderWorkspace()
-      expect(screen.getByRole('radio', { name: 'OpenShift console' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'UI' })).toBeChecked()
     })
   })
 
@@ -140,7 +161,7 @@ describe('OnboardingWorkspace', () => {
     const consoleStep = definition.steps.find((s) => s.ui?.console)!
 
     function switchToUi() {
-      fireEvent.click(screen.getByRole('radio', { name: 'OpenShift console' }))
+      fireEvent.click(screen.getByRole('radio', { name: 'UI' }))
     }
 
     it('shows the path as plain text while no base URL is set', () => {
@@ -181,7 +202,17 @@ describe('OnboardingWorkspace', () => {
       expect(screen.queryByText(/open in a new tab/)).not.toBeInTheDocument()
 
       switchToUi()
-      expect(screen.getByText(/links open in a new tab/)).toBeInTheDocument()
+      expect(screen.getByText(/Links open in a new tab/)).toBeInTheDocument()
+    })
+
+    it('still names the specific console on the link itself', () => {
+      renderWorkspace()
+      switchToUi()
+      fireEvent.change(screen.getByLabelText('OpenShift console base URL'), {
+        target: { value: 'https://console.apps.acme.com' },
+      })
+
+      expect(screen.getAllByRole('link', { name: /Open in OpenShift console/ }).length).toBeGreaterThan(0)
     })
   })
 

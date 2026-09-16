@@ -24,6 +24,25 @@
           "Fill in the tenant and product names exactly as you will use them everywhere else.",
           "Submit, and note the ticket key - the steps below reference it."
         ]
+      },
+      "cli": {
+        "instructions": [
+          "Install Atlassian's own CLI (acli), or ankitpokhrel/jira-cli if you prefer it.",
+          "Confirm the exact flags against your Jira version - the subcommand names have changed across releases (Jira now calls issues \"work items\").",
+          "Note the key it prints; the steps below reference it."
+        ],
+        "actions": [
+          {
+            "type": "docs",
+            "label": "Atlassian CLI docs",
+            "url": "https://developer.atlassian.com/cloud/acli/"
+          },
+          {
+            "type": "command",
+            "label": "the acli call",
+            "command": "acli jira workitem create --project PLAT --type Task --summary \"Onboard <tenant>/<product>\""
+          }
+        ]
       }
     },
     {
@@ -50,17 +69,6 @@
           "Open the access portal and search for your product repository.",
           "Request the Write role, naming the onboarding ticket as justification.",
           "Wait for the approval mail before continuing."
-        ]
-      },
-      "cli": {
-        "instructions": [
-          "Confirm the grant landed before moving on."
-        ],
-        "actions": [
-          {
-            "type": "command",
-            "command": "gh api repos/OWNER/REPO --jq .permissions"
-          }
         ]
       }
     },

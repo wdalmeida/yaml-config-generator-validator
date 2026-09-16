@@ -48,7 +48,7 @@ page:
 | `title` | yes | The pill label. |
 | `x-onboarding-id` | yes | Stable id. Also the `localStorage` key suffix — **changing it orphans every user's saved progress**, and it must not collide with any pill's id. |
 | `intro` | no | One paragraph above the step list. |
-| `x-console-label` | no | What your org calls its web console, e.g. `OpenShift console`. Labels the UI half of the CLI/UI switch. Defaults to `Console`. |
+| `x-console-label` | no | What your org calls its web console, e.g. `OpenShift console`. Labels the console **link** only — the switch itself stays generic. Defaults to `Console`. |
 | `steps` | yes | At least one step, in the order the user should work through them. |
 
 ## Step keys
@@ -103,9 +103,13 @@ Rules enforced for you:
 
 ## Two routes: `cli` and `ui`
 
-Most steps can be done either from a terminal or by clicking around a console. A reader picks
-one with the switch above the list, and **sees only that one** — so each route gets its own
-block, with an ordered sub-list of what to actually do:
+Most steps can be done either from a terminal or by clicking through some interface. A reader
+picks one with the **Command line / UI** switch above the list, and sees only that one — so each
+route gets its own block, with an ordered sub-list of what to actually do.
+
+The switch says "UI", not the name of any particular console, because a step's UI route is
+frequently something else entirely: a Jira form, an access portal, GitHub's web editor. The
+`x-console-label` name appears on the console *link*, where it really is one specific console.
 
 ```json
 {
@@ -139,10 +143,17 @@ block, with an ordered sub-list of what to actually do:
 | `actions` | both | Route-specific links or commands, shown under the instructions. |
 | `console` | `ui` only | A **path**, not a full URL — appended to the console base URL the reader types once, so one checklist works against any cluster. |
 
-A step may have one route, both, or neither. **Write both wherever both genuinely exist**: a
-step with only a `cli` block shows a small "Documented for the CLI route only" note to a reader
-on the UI route, which is honest but not useful. A step with neither (a "go ask someone" step)
-just shows its title and its shared actions, which is fine.
+A step may have one route, both, or neither.
+
+**The switch only hides a route when there is a choice to make.** A step documenting just one
+way shows that one way whichever route is selected, tagged `CLI only` or `UI only` so the
+reader understands why they're looking at commands while the switch says UI. Hiding it would
+leave the step looking like it needs nothing done to it.
+
+So don't invent a second route to fill a gap — some steps genuinely have one. Requesting repo
+access is a portal-and-approval flow with no terminal equivalent; bootstrapping a checkout is
+commands and nothing else. A step with neither block (a "go ask someone" step) just shows its
+title and its shared actions, which is fine too.
 
 ## The Jira base URL
 
@@ -180,11 +191,16 @@ Console links open in a **new tab**. There is no web API for split-screen — a 
 the browser into split view, that's a browser/OS feature the reader triggers themselves — so
 the UI route shows a one-line hint saying so rather than pretending otherwise.
 
+Note the console is only *one* kind of UI route. A step whose UI route is some other interface
+just uses a `link` action and skips `console` entirely.
+
 ## Things handled for you (don't hand-roll these)
 
 - **Status dot**: grey until anything is typed or ticked, amber while in progress, green once
   every non-`optional` step is ticked *and* tenant and product are both filled
   (`getOnboardingStatus` in `src/onboarding/index.ts`).
+- **Route fallback**: a step with only one documented route shows it regardless of the switch,
+  tagged — you never have to duplicate a route just to keep a step visible.
 - **Persistence**: progress saves to `localStorage` under `onboarding:<x-onboarding-id>` on
   every change; nothing to wire up. The route preference and both base URLs are separate
   per-user keys (`step-path`, `jira-base-url`, `console-base-url`), since they belong to the

@@ -31,12 +31,20 @@ export function OnboardingStep({
   pillLabels,
   onOpenConfig,
 }: OnboardingStepProps) {
-  const variant: OnboardingPathVariant | undefined = path === 'cli' ? step.cli : step.ui
-  const consolePath = path === 'ui' ? step.ui?.console : undefined
+  // The switch hides the route you didn't pick - but only when there is actually a choice to
+  // make. A step documented just one way shows that one way regardless, tagged so it's obvious
+  // why you're looking at commands while the switch says UI. Hiding it instead would leave the
+  // step looking like it needs nothing done to it.
+  const selected: OnboardingPathVariant | undefined = path === 'cli' ? step.cli : step.ui
+  const fallback: OnboardingPathVariant | undefined = path === 'cli' ? step.ui : step.cli
+  const variant = selected ?? fallback
+  const onlyRoute = !selected && Boolean(fallback)
+
+  // Read off the variant actually being shown, not off `path`: when a CLI reader falls back to
+  // a UI-only step, that step's console link is part of what they need.
+  const showingUi = Boolean(step.ui) && variant === step.ui
+  const consolePath = showingUi ? step.ui?.console : undefined
   const consoleHref = consolePath ? consoleUrlFor(consoleBaseUrl, consolePath) : null
-  // A step documented only for the other lane. Say so rather than rendering a step that looks
-  // like it needs nothing done to it.
-  const onlyOtherPath = !variant && Boolean(path === 'cli' ? step.ui : step.cli)
 
   function renderAction(action: OnboardingAction, index: number) {
     switch (action.type) {
@@ -105,6 +113,7 @@ export function OnboardingStep({
       <label className="checklist-step-title">
         <input type="checkbox" checked={done} onChange={(e) => onToggle(e.target.checked)} />
         <span>{step.title}</span>
+        {onlyRoute && <span className="step-route-tag">{showingUi ? 'UI only' : 'CLI only'}</span>}
       </label>
 
       {step.detail && <p className="checklist-step-detail">{step.detail}</p>}
@@ -134,12 +143,6 @@ export function OnboardingStep({
         )}
 
         {variant && variant.actions.length > 0 && <div className="checklist-step-links">{variant.actions.map(renderAction)}</div>}
-
-        {onlyOtherPath && (
-          <p className="step-other-path">
-            Documented for the {path === 'cli' ? 'UI' : 'CLI'} route only — switch above to see it.
-          </p>
-        )}
       </div>
     </li>
   )

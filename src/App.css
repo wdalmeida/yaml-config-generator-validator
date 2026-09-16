@@ -553,10 +553,18 @@ textarea {
   color: var(--accent);
 }
 
-.step-other-path {
+/* Marks a step that only documents one route, so a reader on the CLI route understands why
+   they're looking at console clicks (or vice versa) rather than assuming the switch broke. */
+.step-route-tag {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--muted);
-  font-size: 0.8rem;
-  font-style: italic;
+  font-size: 0.7rem;
+  font-weight: 400;
+  line-height: 1.6;
 }
 
 .checklist-step-links {

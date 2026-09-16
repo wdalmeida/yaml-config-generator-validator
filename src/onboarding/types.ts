@@ -71,7 +71,9 @@ export const onboardingFileSchema = z
     title: z.string().min(1),
     'x-onboarding-id': z.string().min(1),
     intro: z.string().min(1).optional(),
-    // What this org calls its web console, e.g. "OpenShift console". One label for the whole
+    // What this org calls its web console, e.g. "OpenShift console". Labels the console *link*
+    // only - not the UI/CLI switch, which stays generic because a step's UI route is often some
+    // other interface entirely (a Jira form, an access portal). One label for the whole
     // checklist rather than a per-step one, since every ui.console path points at the same host.
     'x-console-label': z.string().min(1).optional(),
     steps: z.array(stepSchema).min(1),
