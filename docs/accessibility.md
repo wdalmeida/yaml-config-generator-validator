@@ -13,6 +13,7 @@ Three things run on every push and PR, and they answer different questions.
 | Authoring | [oxlint](https://oxc.rs)'s `jsx-a11y` plugin (`npm run lint`) | one JSX element at a time, in the source | a missing `alt`, an ARIA attribute on an element that cannot carry it, a `<label>` written next to its input inline |
 | Rendered | [axe-core](https://github.com/dequelabs/axe-core) over the real component trees (`src/App.a11y.test.tsx`) | the DOM React actually produces | a control with no accessible name, a duplicated id, a heading level skipped, a landmark violation |
 | Palette | contrast ratios computed from `src/App.css` (`src/App.contrast.test.ts`) | the custom properties themselves, in both themes | text or a focus ring below the WCAG ratio |
+| Colour vision | dichromacy simulation + CIEDE2000 (`src/App.colorblind.test.tsx`) | the same tokens, simulated for three deficiencies | two states that mean different things but look the same |
 
 **The middle row is the one that was missing**, and its absence is the reason this document
 exists. `CLAUDE.md` had flagged it: jsx-a11y is *"authoring-time only, not a runtime/rendered
@@ -52,6 +53,64 @@ Two rules are disabled under jsdom, both for real reasons rather than convenienc
   renders one component into a bare `<div>` rather than the page that supplies `<main>`. It is
   re-enabled for the full-`App` render, where the question is meaningful.
 
+## Colour vision
+
+Contrast and colour-vision deficiency are different questions, and passing the first says
+nothing about the second: two colours can each clear 4.5:1 against the background and be
+indistinguishable *from each other*. Deuteranomaly and protanomaly together affect roughly **1
+in 12 men**, so this is not an edge case.
+
+`src/App.colorblind.test.tsx` simulates each palette for protanopia, deuteranopia and tritanopia
+using the Machado, Oliveira & Fernandes (2009) matrices, then measures CIEDE2000 between the
+colours that encode mutually exclusive states. Below about **11** two colours of similar
+lightness are not reliably told apart — a working threshold, not a standard: the CIE's own "just
+noticeable" is far smaller, but picking one of several discrete states out of a UI needs more
+margin than spotting that two swatches differ side by side.
+
+The pill status marks failed it outright:
+
+```text
+BEFORE                                          AFTER
+ 6.6  muted  vs success  (protanopia)           12.1   (light)   16.0  (dark)
+ 8.6  warn   vs success  (protanopia)           24.2   (light)   26.5  (dark)
+```
+
+Amber against green is the pairing that disappears, and it was carrying *"in progress"* against
+*"valid"*. Two things changed:
+
+**`--success` moved off the green axis to a teal** (`#115e59` light, `#5eead4` dark). Teal puts
+the difference on the blue axis, which protanopes and deuteranopes still see. It still reads as
+"good", which a blue would not.
+
+**The status mark became a shape.** This is the part that actually matters. Three silhouettes —
+an empty ring, a half-filled ring, a tick — instead of one circle in three colours. A shape
+survives every deficiency including monochromacy, survives a greyscale print and a washed-out
+projector, and needs no palette to be lucky. The colour now agrees with the shape rather than
+being the message, which is what WCAG 1.4.1 asks for.
+
+### What is still close, and why that is fine
+
+Some warm pairs remain near each other under simulation — `--error` against `--accent-strong` is
+2.5 for a deuteranope in dark mode:
+
+```text
+LIGHT   2.3  warn  vs accent-strong  (tritanopia)
+        5.8  warn  vs error          (deuteranopia)
+DARK    2.5  error vs accent-strong  (deuteranopia)
+```
+
+These are deliberately **not** asserted. They are not contrastive: `--accent-strong` is button,
+link and focus chrome, `--error` is validation text, `--warn` is a status. Nobody has to tell a
+button's colour from an error message to understand the page — they are different components in
+different places, never two readings of the same element. Requiring every pair to separate would
+force the palette into four unrelated hues and buy nothing. The test asserts within
+`CONTRASTIVE_SETS` for exactly that reason, and the sets are the thing to extend when a new
+state is added.
+
+The simulation itself is guarded too: a run that mangled the matrices would report huge
+differences and pass everything vacuously, so there are two checks that red and green do collapse
+for a deuteranope, and that a neutral grey comes through untouched.
+
 ## The manual pass
 
 Do this before shipping anything that changes the shape of a screen. None of it is automated
@@ -72,11 +131,14 @@ npm run dev
    say which row it is.
 4. **Copy something.** The confirmation is a live region, so it is announced without moving
    focus. If you hear nothing, it regressed.
-5. **Zoom to 200%** and then to 400% (WCAG 1.4.10 asks for 320px-equivalent reflow). The columns
+5. **Look at it in greyscale.** macOS: System Settings → Accessibility → Display → Colour
+   Filters → Greyscale. Every state should still be readable. If two things become the same
+   thing, colour was carrying meaning on its own somewhere.
+6. **Zoom to 200%** and then to 400% (WCAG 1.4.10 asks for 320px-equivalent reflow). The columns
    collapse at 860px; nothing should need horizontal scrolling except the YAML field.
-6. **Switch to dark mode** and repeat 1 and 3. The palette differs, and `--muted` was wrong there
+7. **Switch to dark mode** and repeat 1 and 3. The palette differs, and `--muted` was wrong there
    for the whole life of dark mode without anyone noticing.
-7. **Turn on Windows High Contrast / forced colors** if you have it. The focus ring is re-stated
+8. **Turn on Windows High Contrast / forced colors** if you have it. The focus ring is re-stated
    in `Highlight` for this; most other colour is given up to the OS by design.
 
 ## What was fixed in the first pass
@@ -99,10 +161,16 @@ that gets undone by a well-meaning refactor.
 | `<title>` was the repo slug | 2.4.2 | a real page title |
 | Brand orange as text: **2.99:1**; white on it: **3.12:1** | 1.4.3 | `--accent-strong`, same hue and saturation, walked down in lightness until it passes. `--accent` stays the brand colour for lines and dots, which only need 3:1 |
 | `--muted` never redefined for dark: **3.24:1** | 1.4.3 | a dark-mode value. The dark block had overridden every other colour token |
+| Status shown only by a dot's colour; amber vs green **8.6** simulated for protanopia | 1.4.1 | three shapes (ring, half-ring, tick), and `--success` moved to a teal |
 | Input and button borders at **1.42:1** | 1.4.11 | `--border-control`, separate from the decorative `--border` a card uses |
 
-## The two things most likely to be undone
+## The things most likely to be undone
 
+- **`--success` is a teal on purpose.** "Use green for success" is the obvious edit for anyone
+  who does not know why. Green against the amber beside it measures 8.6 simulated for
+  protanopia; `App.colorblind.test.tsx` fails on it by name for that reason.
+- **The status mark is a shape first.** Replacing the three SVGs with one coloured circle puts
+  the state back into colour alone, whatever the palette is.
 - **`--accent` and `--accent-strong` are not redundant.** The brand orange is fine for a border
   or a dot and fails as text. Collapsing them back into one token puts the app straight back to
   2.99:1, and `App.contrast.test.ts` asserts the split itself for that reason.

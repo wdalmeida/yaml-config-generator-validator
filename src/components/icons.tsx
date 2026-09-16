@@ -53,3 +53,58 @@ export function TerminalIcon() {
     </svg>
   )
 }
+
+// --- pill status marks -----------------------------------------------------------------------
+//
+// Three silhouettes, not three colours. The pill status used to be a coloured dot and nothing
+// else, and the three colours it used collapse under the two common red-green deficiencies:
+// amber against green measures CIEDE2000 8.6 simulated for protanopia and 9.9 in dark mode,
+// where anything under about 11 is not reliably tellable apart. Around 1 in 12 men has one of
+// these, so that is not an edge case.
+//
+// Better colours help and are not enough - see docs/accessibility.md for the measurements. The
+// shape is what actually carries the state: an empty ring, a half-filled ring, a tick. Each is
+// legible at 12px in one colour, in a photocopy, and to anyone at all. The colour is now
+// reinforcement rather than the message, which is what WCAG 1.4.1 asks for.
+const statusCommon = {
+  width: 12,
+  height: 12,
+  viewBox: '0 0 16 16',
+  'aria-hidden': true,
+  focusable: 'false' as const,
+}
+
+/** Not started: an empty ring. */
+export function StatusEmptyIcon() {
+  return (
+    <svg {...statusCommon} fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="8" cy="8" r="6" />
+    </svg>
+  )
+}
+
+/** In progress: the same ring, half filled - a progress reading, not a different dot. */
+export function StatusDraftIcon() {
+  return (
+    <svg {...statusCommon} fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 2a6 6 0 0 1 0 12Z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/** Valid: a tick. Deliberately not a circle at all, so it reads as finished at a glance. */
+export function StatusValidIcon() {
+  return (
+    <svg
+      {...statusCommon}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.25}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m2.5 8.5 3.5 3.5 7.5-8" />
+    </svg>
+  )
+}

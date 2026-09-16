@@ -10,7 +10,13 @@
   --surface: #fafaf9;
   --surface-raised: #ffffff;
   --error: #b91c1c;
-  --success: #15803d;
+  /* Teal, not green. Green against the amber below is the pairing that disappears with a
+     red-green deficiency - simulated for protanopia the old pair measured CIEDE2000 8.6, where
+     roughly 11 is the floor for "reliably tellable apart". Teal moves the difference onto the
+     blue axis, which protanopes and deuteranopes still see, and takes the pair to 12.1. The
+     shape of the status mark is what really carries the state (see components/icons.tsx); this
+     just stops the colour actively working against it. */
+  --success: #115e59;
   --warn: #b45309;
   --accent: #d97757;
   --accent-hover: #c4633f;
@@ -54,7 +60,7 @@
     --surface: #1c1c1f;
     --surface-raised: #232326;
     --error: #f87171;
-    --success: #4ade80;
+    --success: #5eead4;
     --warn: #fbbf24;
     --accent: #e08863;
     --accent-hover: #eb9c7a;
@@ -98,21 +104,21 @@
   color: var(--accent-strong);
 }
 
-.status-dot {
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--muted);
+/* The mark is an SVG whose shape says which state this is; the colour agrees with it rather
+   than carrying it alone. `display: flex` keeps the 12px glyph on the text's centre line. */
+.status-mark {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+  color: var(--muted);
 }
 
-.status-dot.status-draft {
-  background: var(--warn);
+.status-mark.status-draft {
+  color: var(--warn);
 }
 
-.status-dot.status-valid {
-  background: var(--success);
+.status-mark.status-valid {
+  color: var(--success);
 }
 
 .workspace {

@@ -3,15 +3,18 @@ import { ConfigWorkspace } from './components/ConfigWorkspace'
 import { KubernetesWorkspace } from './components/KubernetesWorkspace'
 import { OnboardingWorkspace } from './components/OnboardingWorkspace'
 import { usePersistedState } from './lib/persisted-state'
+import { StatusDraftIcon, StatusEmptyIcon, StatusValidIcon } from './components/icons'
 import { getNavEntry, NAV_ENTRIES, navStatus } from './nav'
 import './App.css'
 
-// Spoken form of what the status dot shows in colour. "Not started" rather than "empty"
-// because it is read as part of a sentence: "Tenant Config, not started".
-const STATUS_LABELS = {
-  empty: 'not started',
-  draft: 'in progress, not yet valid',
-  valid: 'valid',
+// Each status is carried three ways: a shape, a colour, and a word. The shape is the primary
+// one - the three colours this used to rely on are not reliably tellable apart with a red-green
+// deficiency (see icons.tsx and docs/accessibility.md) - and the word is what a screen reader
+// gets, since it reads none of the other two.
+const STATUS = {
+  empty: { label: 'not started', Icon: StatusEmptyIcon },
+  draft: { label: 'in progress, not yet valid', Icon: StatusDraftIcon },
+  valid: { label: 'valid', Icon: StatusValidIcon },
 } as const
 
 function App() {
@@ -42,6 +45,7 @@ function App() {
             // still highlights the pill whose workspace is actually on screen.
             const isActive = navEntry.id === entry.id
             const status = navStatus(navEntry)
+            const { Icon: StatusIcon } = STATUS[status]
             return (
               <button
                 key={navEntry.id}
@@ -55,12 +59,13 @@ function App() {
                 className={`config-tab${isActive ? ' active' : ''}`}
                 onClick={() => setSelectedId(navEntry.id)}
               >
-                <span className={`status-dot status-${status}`} aria-hidden="true" />
+                <span className={`status-mark status-${status}`}>
+                  <StatusIcon />
+                </span>
                 {navEntry.label}
-                {/* The dot's colour is the only carrier of this state on screen, which fails
-                    WCAG 1.4.1 on its own and leaves it simply absent for anyone not looking at
-                    it. The text is hidden visually and read out as part of the pill's name. */}
-                <span className="visually-hidden">, {STATUS_LABELS[status]}</span>
+                {/* Neither the shape nor the colour reaches a screen reader, so the state is
+                    also stated in words, hidden visually and read as part of the pill's name. */}
+                <span className="visually-hidden">, {STATUS[status].label}</span>
               </button>
             )
           })}

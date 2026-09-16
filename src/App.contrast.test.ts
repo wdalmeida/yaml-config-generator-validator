@@ -1,9 +1,3 @@
-import { describe, expect, it } from 'vitest'
-// Vite's ?raw import rather than node:fs - the app tsconfig deliberately carries no node types,
-// and this keeps the test on the same module graph as the stylesheet it is checking, so moving
-// or renaming App.css breaks the build here instead of silently reading nothing.
-import css from './App.css?raw'
-
 // The contrast half of the accessibility checks, split out from App.a11y.test.tsx because axe
 // cannot do it here: its `color-contrast` rule needs real layout and computed styles, and jsdom
 // applies no stylesheet at all, so every element resolves to transparent on transparent.
@@ -18,31 +12,14 @@ import css from './App.css?raw'
 // buttons), and --muted left at its light-mode value in the dark block (3.24:1 on the raised
 // surface). Hence --accent-strong, and a dark --muted.
 
-function tokensFrom(block: string): Record<string, string> {
-  return Object.fromEntries([...block.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]))
-}
+import { describe, expect, it } from 'vitest'
+// Vite's ?raw import rather than node:fs - the app tsconfig deliberately carries no node types,
+// and this keeps the test on the same module graph as the stylesheet it is checking, so moving
+// or renaming App.css breaks the build here instead of silently reading nothing.
+import css from './App.css?raw'
+import { contrast, palettes } from './test-color'
 
-const lightBlock = /^:root \{(.*?)^\}/ms.exec(css)
-const darkBlock = /@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)^ {2}\}/ms.exec(css)
-if (!lightBlock || !darkBlock) throw new Error('App.css no longer declares its palette on :root - update this test')
-
-const LIGHT = tokensFrom(lightBlock[1])
-const DARK = { ...LIGHT, ...tokensFrom(darkBlock[1]) }
-
-/** WCAG 2.x relative luminance. */
-function luminance(hex: string): number {
-  const h = hex.replace('#', '')
-  const channel = (i: number) => {
-    const c = parseInt(h.slice(i, i + 2), 16) / 255
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  }
-  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
-}
-
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (hi + 0.05) / (lo + 0.05)
-}
+const { light: LIGHT, dark: DARK } = palettes(css)
 
 // Text pairs the stylesheet really renders. Each one is a `color:` and the surface it sits on.
 const TEXT_PAIRS: Array<[fg: string, bg: string]> = [
