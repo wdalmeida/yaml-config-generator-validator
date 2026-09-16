@@ -1,0 +1,34 @@
+# KubeLinter configuration. Read automatically from the working directory by `kube-linter
+# lint` - ci.yml's helm job and `just helm` both rely on that rather than passing --config.
+#
+# Two of the default checks are excluded. Neither is a disagreement about the principle; in
+# both cases the chart already does the thing the check is asking for, in a way the check
+# can't see, or the alternative would be worse. Nothing else is turned off - if a new check
+# fires, the answer is to fix the chart.
+checks:
+  addAllBuiltIn: false
+  doNotAutoAddDefaults: false
+  exclude:
+    # The default image.tag resolves to the chart's appVersion, which is "latest", because the
+    # app has no tagged release yet (release-please's standing PR) and the published image
+    # carries `latest` plus an immutable `sha-<short>` per commit. The chart supports
+    # `image.digest` and both NOTES.txt and docs/helm-chart.md push you towards it on every
+    # install - ci/everything-values.yaml renders that path, so the digest form is covered by
+    # CI. Hardcoding a digest as the *default* would mean a chart that silently rots between
+    # releases, which trades a visible weakness for an invisible one.
+    - "latest-tag"
+
+    # This check looks specifically for podAntiAffinity. The chart uses
+    # topologySpreadConstraints instead, which is the newer mechanism for the same goal and is
+    # strictly more expressive - scoped to this release's own pods, maxSkew 1 across
+    # kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway so a single-node cluster can
+    # still run two replicas. Satisfying the check literally would mean adding a redundant
+    # second spreading rule.
+    - "no-anti-affinity"
+
+    # Only reachable through ci/autoscaling-values.yaml, which sets serviceAccount.create=false
+    # with a name, precisely to exercise that branch. A lint over rendered manifests has no
+    # cluster to look the account up in, so the check can never pass for that fixture and would
+    # never fail for a real mistake either. The chart's own default creates the ServiceAccount,
+    # and that path is linted.
+    - "non-existent-service-account"

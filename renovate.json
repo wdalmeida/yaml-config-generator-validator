@@ -91,6 +91,15 @@
     },
     {
       "customType": "regex",
+      "description": "kube-linter, which lints the rendered Helm chart in ci.yml's helm job, via a KUBE_LINTER_VERSION env var. Unlike every other tool here it publishes no checksums file, so the install step reads the asset's sha256 from GitHub's release API instead - that tracks a bump from this manager automatically, with no hash to update by hand.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": ["KUBE_LINTER_VERSION:\\s*(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "stackrox/kube-linter",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
       "description": "Trivy, the container image scanner, downloaded and checksum-verified directly from GitHub Releases in container.yml via a TRIVY_VERSION env var - not aquasecurity/trivy-action, which fetches its own binary at runtime, the same nested-fetch problem that ruled out anchore/sbom-action for Syft above.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
@@ -134,7 +143,7 @@
       "automerge": true
     },
     {
-      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner, Helm, kubeconform) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor/helm jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan/sca jobs would fail outright if a bump broke anything. Scoped by file so the devcontainer's own three pins, which no CI job exercises, don't inherit that automerge - see the rule below.",
+      "description": "Automerge the workflow tool-version group (actionlint, gitleaks, zizmor, Syft, hadolint, Trivy, OSV-Scanner, Helm, kubeconform, kube-linter) once CI passes - each is checksum- or SHA-verified at install time regardless of what Renovate bumps it to, and ci.yml's own actionlint/gitleaks/zizmor/helm jobs, supply-chain.yml's sbom job and container.yml's hadolint/scan/sca jobs would fail outright if a bump broke anything. Scoped by file so the devcontainer's own three pins, which no CI job exercises, don't inherit that automerge - see the rule below.",
       "matchManagers": ["custom.regex"],
       "matchFileNames": [".github/workflows/**"],
       "groupName": "workflow tool versions",

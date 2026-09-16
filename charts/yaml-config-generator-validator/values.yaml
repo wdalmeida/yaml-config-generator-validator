@@ -136,6 +136,13 @@ strategy:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+  # AlwaysAllow lets a pod that is already failing its readiness probe be evicted even when
+  # that would breach the budget. Without it, a bad rollout can hold a node drain open
+  # indefinitely: the pods are unhealthy, so the budget is never satisfied, so nothing may be
+  # evicted, so the node never drains. Nothing here is stateful enough for the stricter
+  # default to be protecting anything. The field needs Kubernetes 1.27+; set it to "" to omit
+  # it on an older cluster.
+  unhealthyPodEvictionPolicy: AlwaysAllow
 
 autoscaling:
   enabled: false

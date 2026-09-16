@@ -47,6 +47,7 @@ hadolint_version      := `grep -rhoE 'HADOLINT_VERSION:[[:space:]]*[0-9.]+' .git
 trivy_version         := `grep -rhoE 'TRIVY_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 helm_version          := `grep -rhoE 'HELM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 kubeconform_version   := `grep -rhoE 'KUBECONFORM_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
+kubelinter_version    := `grep -rhoE 'KUBE_LINTER_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 node_major            := `grep -ohE 'node-version: [0-9]+' .github/workflows/ci.yml | head -1 | awk '{print $2}'`
 
 [private]
@@ -193,7 +194,25 @@ install-pinned tool="drifted":
           tar -xzf "${tmp}/${asset}" -C "$tmp" kubeconform
           install -m 0755 "${tmp}/kubeconform" "{{tools_bin}}/kubeconform"
           ;;
-        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy helm kubeconform)" >&2; exit 1 ;;
+        kube-linter)
+          # The one tool here with no checksums file in its release - only Sigstore bundles,
+          # and those are bare blob signatures rather than provenance, so `gh attestation
+          # verify` can't read them. GitHub's release API reports each asset's sha256, which
+          # is the same trust root a checksums.txt would have had, so that is what this
+          # checks; ci.yml does exactly the same.
+          local v="{{kubelinter_version}}" tag asset digest tmp
+          command -v gh >/dev/null || { echo "kube-linter needs the gh CLI to read its release digest" >&2; exit 1; }
+          tag="v${v}"
+          asset="kube-linter-${o}"
+          [ "$a" = arm64 ] && asset="${asset}_arm64"
+          digest="$(gh api "repos/stackrox/kube-linter/releases/tags/${tag}" --jq ".assets[] | select(.name == \"${asset}\") | .digest")"
+          [ -n "$digest" ] || { echo "no digest reported for ${asset}" >&2; exit 1; }
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/kube-linter" "https://github.com/stackrox/kube-linter/releases/download/${tag}/${asset}"
+          echo "${digest#sha256:}  ${tmp}/kube-linter" | {{sha256}} -c - >/dev/null
+          install -m 0755 "${tmp}/kube-linter" "{{tools_bin}}/kube-linter"
+          ;;
+        *) echo "unknown tool: $1 (actionlint gitleaks zizmor plumber syft osv-scanner semgrep hadolint trivy helm kubeconform kube-linter)" >&2; exit 1 ;;
       esac
       echo "  pinned $1 -> {{tools_bin}}"
     }
@@ -242,6 +261,7 @@ doctor *flags:
       "trivy|{{trivy_version}}|trivy --version | head -1 | awk '{print \$2}'"
       "helm|{{helm_version}}|helm version --short | sed 's/^v//; s/+.*//'"
       "kubeconform|{{kubeconform_version}}|kubeconform -v | tr -d v"
+      "kube-linter|{{kubelinter_version}}|kube-linter version"
     )
 
     missing=(); drifted=()
@@ -347,7 +367,7 @@ links:
 # a misspelled field. Each values file under charts/*/ci/ is rendered too, since the optional
 # templates (Ingress, HPA, PDB, NetworkPolicy) are off in the defaults.
 [group('ci')]
-helm:
+helm: _out
     #!/usr/bin/env bash
     set -euo pipefail
     for chart in charts/*/; do
@@ -364,6 +384,17 @@ helm:
         echo "$(basename "$values"):"
         helm template release "$chart" --values "$values" \
           | kubeconform -strict -summary -kubernetes-version 1.31.0
+      done
+    done
+    # kubeconform says whether the object is valid; kube-linter says whether it is sensible.
+    # Config and the two documented exclusions are in .kube-linter.yaml.
+    kube-linter lint charts/ --format sarif > "{{out}}/kube-linter-results.sarif" || true
+    kube-linter lint charts/
+    for chart in charts/*/; do
+      for values in "$chart"ci/*-values.yaml; do
+        [ -e "$values" ] || continue
+        echo "kube-linter $(basename "$values"):"
+        helm template release "$chart" --values "$values" | kube-linter lint -
       done
     done
 

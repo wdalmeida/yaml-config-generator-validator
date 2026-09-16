@@ -13,9 +13,9 @@ Image: {{ include "ycgv.image" . }}
 
 Reach it:
 {{- if .Values.ingress.enabled }}
-{{- range $host := .Values.ingress.hosts }}
+{{- range $rule := .Values.ingress.hosts }}
 {{- range .paths }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $rule.host }}{{ .path }}
 {{- end }}
 {{- end }}
 {{- else if eq .Values.service.type "ClusterIP" }}

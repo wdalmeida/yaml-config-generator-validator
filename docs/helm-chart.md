@@ -128,13 +128,48 @@ worse than no rule at all.
 
 ## What CI checks
 
-`ci.yml`'s `helm` job runs `helm lint` and then renders the chart and pipes every manifest
-through [kubeconform](https://github.com/yannh/kubeconform) (`-strict`) against the real
-Kubernetes API schemas. `helm lint` alone only inspects the chart's own structure — it passes
-a Deployment with a misspelled field quite happily, which is the mistake kubeconform catches.
+`ci.yml`'s `helm` job runs three tools, each answering a different question:
 
-Both tools are checksum-verified binaries, the same pattern as every other tool in these
-workflows, and Renovate bumps both in the "workflow tool versions" group.
+| Tool | Question |
+|---|---|
+| `helm lint` | is this a well-formed chart? |
+| [kubeconform](https://github.com/yannh/kubeconform) `-strict` | is each rendered manifest a **valid** Kubernetes object? |
+| [kube-linter](https://github.com/stackrox/kube-linter) | is it a **sensible** one? |
+
+`helm lint` alone passes a Deployment with a misspelled field quite happily, which is what
+kubeconform catches. kubeconform in turn is perfectly happy with a valid object that runs as
+root — that is kube-linter's job. Its findings go to **Security → Code scanning** as SARIF
+plus a downloadable artifact, like every other scanner here.
+
+All three are version-pinned and verified at install time, and Renovate bumps them in the
+"workflow tool versions" group. kube-linter is the one exception to "checksum-verified": it
+publishes no checksums file, only per-asset Sigstore bundles, and those are bare blob
+signatures rather than SLSA provenance, so `gh attestation verify` cannot consume them.
+GitHub's release API does report each asset's sha256 — the same trust root a `checksums.txt`
+in the release would have had, and with the useful property of tracking a version bump on its
+own — so that is what the install step verifies against.
+
+### The two kube-linter exclusions
+
+`.kube-linter.yaml` turns off exactly two default checks, both documented in the file itself:
+
+- **`latest-tag`** — the default `image.tag` resolves to `appVersion`, which is `latest`,
+  because the app has no tagged release yet. Hardcoding a digest as the *default* would give
+  a chart that silently rots between releases: a visible weakness traded for an invisible one.
+  The digest path is real and is rendered by `ci/everything-values.yaml`.
+- **`no-anti-affinity`** — the check looks specifically for `podAntiAffinity`. The chart uses
+  `topologySpreadConstraints`, which is the newer mechanism for the same goal; satisfying the
+  check literally would mean carrying a redundant second spreading rule.
+
+A third, `non-existent-service-account`, is excluded as an artifact of the test fixtures: a
+lint over rendered manifests has no cluster in which to find a pre-existing ServiceAccount,
+which is exactly what `ci/autoscaling-values.yaml` sets up on purpose.
+
+Nothing else is suppressed. kube-linter found one genuine bug while this chart was being
+written — a PodDisruptionBudget with no `unhealthyPodEvictionPolicy`, which can hold a node
+drain open indefinitely when the pods it protects are the unhealthy ones — and that was fixed
+rather than excluded (`podDisruptionBudget.unhealthyPodEvictionPolicy`, `AlwaysAllow` by
+default, needs Kubernetes 1.27+).
 
 Every values file under `charts/*/ci/*-values.yaml` is rendered too, not just the defaults:
 `everything-values.yaml` turns on Ingress, HPA, PDB and NetworkPolicy at once, and
@@ -164,6 +199,10 @@ real cluster (`kind`, Kubernetes v1.37) before being committed:
 
 A single `Unhealthy` event per pod at startup is normal and harmless: the kubelet's first
 readiness probe can beat nginx to the port by a few hundred milliseconds.
+
+The kube-linter gate was checked the other way round too, so that a passing run means
+something: rendering the chart with `--set securityContext=null --set podSecurityContext=null`
+produces `run-as-non-root` and `no-read-only-root-fs` findings and exit code 1.
 
 ## Deliberately not done
 

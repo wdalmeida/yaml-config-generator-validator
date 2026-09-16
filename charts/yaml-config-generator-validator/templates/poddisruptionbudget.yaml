@@ -12,6 +12,9 @@ spec:
   {{- with .Values.podDisruptionBudget.maxUnavailable }}
   maxUnavailable: {{ . }}
   {{- end }}
+  {{- with .Values.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ . }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "ycgv.selectorLabels" . | nindent 6 }}
