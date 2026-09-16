@@ -233,7 +233,8 @@ bundle concurrently. The gap is transient buffer demand while streaming a large 
 connections, which no steady-state reading shows you.
 
 Above 64Mi the extra memory buys ~5% throughput and nothing else, so 128Mi is the knee plus
-headroom rather than a number picked for comfort.
+headroom rather than a number picked for comfort — **at this concurrency**. It does not hold
+at 1 000 connections; see the capacity section below.
 
 ### CPU: starvation degrades, it doesn't kill
 
@@ -267,6 +268,59 @@ twentieth of a core — a single replica served ~330 bundle fetches a second, an
 two replicas idle at around 5Mi and near-zero CPU. For a team-sized audience the defaults are
 far more than enough; the reason not to shrink them further is the memory cliff above, not
 throughput.
+
+### If your platform mandates a CPU limit too
+
+The chart limits memory and not CPU, for the reasons above. Plenty of platforms don't allow
+that. With both limits set, this is what one replica does across the concurrency range —
+20 s at max rate against the JS bundle, memory 128Mi, measured with
+`scripts/helm-capacity.sh`:
+
+| Limite CPU | 1 connexion | 10 connexions | 100 connexions | 1 000 connexions |
+|---|---|---|---|---|
+| 100m | 1 814 req/s | 961 req/s | 1 269 req/s | 1 221 req/s |
+| 250m | 6 404 req/s | 4 405 req/s | 6 066 req/s | 5 613 req/s |
+| 500m | 8 552 req/s | 14 946 req/s | 15 619 req/s | 13 057 req/s |
+| 1 000m | 8 688 req/s | 23 409 req/s | 25 393 req/s | **16 051 req/s, OOMKilled** |
+
+**The balance point for high concurrency is `cpu: 500m` / `memory: 256Mi`**, which is what
+`ci/both-limits-values.yaml` carries. Doubling 500m to 1 000m buys 23% more throughput
+(13 057 → 16 051 req/s) where 250m → 500m more than doubles it, so it is the worst-value step
+on the curve — and it is the only configuration in the campaign the kernel killed.
+
+Two results from that table are worth more than the numbers themselves:
+
+**More CPU can be what kills you on memory.** The only OOMKill came at the *highest* CPU
+limit. A faster pod holds more responses in flight, and each one costs buffers: at 1 000
+connections, 128Mi was killed in 4 runs out of 5 at 1 000m, while 500m never died at the same
+limit. 256Mi survived 3 runs out of 3. The two limits are not independent dials, which is the
+opposite of how they are usually set.
+
+**One connection cannot use more than about 500m.** Throughput at a single connection
+plateaus at ~8 600 req/s no matter how much CPU you grant (8 552 at 500m, 8 688 at 1 000m),
+because a connection waits for each response before sending the next. Concurrency is what
+converts CPU into throughput; a capacity number quoted without a concurrency figure beside it
+means very little.
+
+At 100m the curve is not even monotonic — 1 814 req/s at one connection, 961 at ten. Under a
+tight quota, extra concurrency costs more in throttling and context-switching than it returns.
+
+### Connections are not requests
+
+Worth stating because every number above depends on it. `-c 1000` means a thousand sockets
+held open at once; req/s counts requests served across all of them. HTTP keepalive means one
+socket carries thousands of sequential requests — measured directly in one run:
+
+```text
+Sockets used: 4 (for perfect keepalive, would be 4)
+Code 200 : 305 370 (100.0 %)
+```
+
+Four connections, 305 370 requests. So at 1 000 connections and 16 051 req/s, each connection
+is receiving about 16 req/s — one request every ~62 ms. A concurrent *user* is different
+again: a browser opens around six connections per host, a cold page load is about four
+requests, and a reader spends most of their time not fetching anything. 1 000 held-open
+connections is far more traffic than 1 000 people on the site.
 
 ### One thing you cannot tune from the chart
 

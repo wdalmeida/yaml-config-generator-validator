@@ -81,6 +81,11 @@ ingress:
 # (measured: 46,995 failed requests and two restarts, against zero at 64Mi). 128Mi is the
 # knee plus headroom - it bought ~5% more throughput than 64Mi and nothing beyond that.
 #
+# 128Mi is enough up to ~100 concurrent connections. It is NOT enough at 1 000, where it was
+# OOMKilled in 4 runs out of 5 while 256Mi survived 3 out of 3 - and, counter-intuitively,
+# only when the CPU limit was high enough for the pod to keep that many responses in flight.
+# ci/both-limits-values.yaml carries the measured setting for that case.
+#
 # No CPU limit, and that is the load-tested choice rather than a stylistic one. CPU
 # starvation here degrades gracefully - throttling costs throughput and tail latency but
 # never drops a request - while any limit hurts p99 out of proportion to what it saves:

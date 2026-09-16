@@ -1,0 +1,15 @@
+# Rendered and schema-checked by CI (and `just helm`), not shipped to a cluster: the shape
+# required by platforms that mandate BOTH a CPU and a memory limit, which the chart's defaults
+# deliberately do not set (it limits memory only - see docs/helm-chart.md).
+#
+# The numbers are the measured balance point for 1 000 concurrent connections: 500m serves
+# ~13 000 req/s there, and doubling it to 1 000m buys only 23% more while being the only
+# configuration in the whole campaign that got OOMKilled. 256Mi rather than 128Mi because at
+# that concurrency 128Mi was killed in 4 runs out of 5.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
