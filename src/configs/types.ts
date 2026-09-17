@@ -1,7 +1,12 @@
 import type { ZodType } from 'zod'
 
 export type FieldDescriptor =
-  | { key: string; label: string; type: 'text'; placeholder?: string }
+  // `secret: true` marks a value that must not be handled like ordinary text: it turns off
+  // browser autofill, spellcheck and autocorrect (each of which can otherwise copy the value into
+  // a password manager, a dictionary or a remote spelling service), and it is what tells the
+  // Kubernetes pill to keep the value out of localStorage. It deliberately does NOT render a
+  // masked `type="password"` input - see docs/kubernetes-resources.md for why.
+  | { key: string; label: string; type: 'text'; placeholder?: string; secret?: true }
   | { key: string; label: string; type: 'number' }
   | { key: string; label: string; type: 'boolean' }
   | { key: string; label: string; type: 'select'; options: readonly string[] }

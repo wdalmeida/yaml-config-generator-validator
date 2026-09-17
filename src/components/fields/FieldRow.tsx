@@ -29,6 +29,9 @@ export function FieldRow({ field, value, onChange, compact = false, rowLabel }: 
           aria-label={compact ? compactLabel : undefined}
           value={(value as string | undefined) ?? ''}
           placeholder={field.placeholder ?? field.label}
+          // A secret is not ordinary text: autofill would offer to store it, and spellcheck and
+          // autocorrect both hand what you type to machinery you did not choose.
+          {...(field.secret ? { autoComplete: 'off', autoCorrect: 'off', spellCheck: false } : {})}
           onChange={(e) => onChange(e.target.value)}
         />
       )

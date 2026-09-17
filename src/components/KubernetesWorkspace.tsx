@@ -6,7 +6,9 @@ import {
   kubernetesDraftKey,
   persistedKubernetesDraft,
   readKubernetesDraft,
+  namespaceFor,
   renderManifests,
+  SECRET_KUBERNETES_KEYS,
   type KubernetesDraft,
 } from '../kubernetes'
 import { FieldRow } from './fields/FieldRow'
@@ -22,18 +24,51 @@ export function KubernetesWorkspace() {
   // default on the one pill whose inputs will eventually include a secret. Here the draft is
   // ordinary component state and the write is narrowed to the allow-list on the way out, so an
   // input that nobody has explicitly cleared for storage simply never reaches it.
-  const [draft, setDraft] = useState<KubernetesDraft>(() => ({ ...emptyKubernetesDraft(), ...readKubernetesDraft() }))
+  // Only the persisted half is read back on mount. A secret starts blank every time by design -
+  // there is nowhere for it to have been kept.
+  const [draft, setDraft] = useState<KubernetesDraft>(() => ({
+    ...emptyKubernetesDraft(),
+    ...readKubernetesDraft(),
+  }))
   const [copied, setCopied] = useState(false)
+  const [cleared, setCleared] = useState(false)
 
+  // The one write, narrowed to the allow-list on the way out. A field not on that list - every
+  // secret field included - reaches no store at all.
   useEffect(() => {
     writePersistedState(kubernetesDraftKey(), persistedKubernetesDraft(draft))
   }, [draft])
 
+  const hasSecret = SECRET_KUBERNETES_KEYS.some((key) => (draft[key] ?? '').trim() !== '')
+
+  // Still worth a button even though nothing is stored: the values are on screen and in the
+  // rendered output until something removes them, and "I am about to share this screen" is the
+  // common case. It is named for the category rather than for today's single field - it clears
+  // every SECRET_KUBERNETES_KEYS entry, so a second secret field is covered without a rename.
+  function clearSecrets() {
+    setDraft((prev) => {
+      const next = { ...prev }
+      for (const key of SECRET_KUBERNETES_KEYS) next[key] = ''
+      return next
+    })
+    setCleared(true)
+    setCopied(false)
+  }
+
   const result = renderManifests(draft)
+  // What the namespace would be with the override blank, shown so the default is visible rather
+  // than something you discover by clearing the field.
+  // Note the empty parts are spelled out rather than left blank: with both fields empty,
+  // namespaceFor returns "-", which shown on its own reads as a bug rather than as a template.
+  const derivedNamespace =
+    draft.tenant.trim() && draft.product.trim()
+      ? namespaceFor({ ...draft, namespace: '' })
+      : `${draft.tenant.trim() || '<tenant>'}-${draft.product.trim() || '<product>'}`
 
   function setField(key: string, value: unknown) {
     setDraft((prev) => ({ ...prev, [key]: String(value ?? '') }))
     setCopied(false)
+    setCleared(false)
   }
 
   function handleCopy() {
@@ -48,17 +83,41 @@ export function KubernetesWorkspace() {
         <section className="card">
           <h2>Namespace inputs</h2>
           <p className="card-note">
-            Every resource on the right is named from these two values. Fill them in on the
-            Onboarding checklist and hit “Seed config drafts” to have them arrive here already
-            filled.
+            Every resource on the right is named from the namespace, which is{' '}
+            <code>{derivedNamespace}</code> unless you give one. Tenant and product are still
+            required either way — they label the Namespace object, and the namespace field only
+            renames it. Fill them in on the Onboarding checklist and hit “Seed config drafts” to
+            have them arrive here already filled.
           </p>
         </section>
 
         {KUBERNETES_FIELDS.map((field) => (
           <section className="card-flat" key={field.key}>
             <FieldRow field={field} value={draft[field.key] ?? ''} onChange={(value) => setField(field.key, value)} />
+            {field.key === 'namespace' && (
+              <p className="card-note">
+                Optional. Blank uses <code>{derivedNamespace}</code>. Give one to match a cluster
+                that already names namespaces its own way.
+              </p>
+            )}
+            {field.type === 'text' && field.secret && (
+              <p className="card-note">
+                <strong>Never saved.</strong> It is held on this page only — reloading, leaving, or
+                switching to another pill clears it and you will need to paste it again. Copy the
+                output before you go. Leave it blank to omit the Secret entirely.
+              </p>
+            )}
           </section>
         ))}
+
+        <section className="card-flat">
+          <button type="button" disabled={!hasSecret} onClick={clearSecrets}>
+            Clear secrets
+          </button>
+          <p className="card-note" aria-live="polite">
+            {cleared ? 'Cleared from the page.' : 'Removes it from the field and from the output below.'}
+          </p>
+        </section>
 
         {result.success && (
           <section className="card">
@@ -69,6 +128,11 @@ export function KubernetesWorkspace() {
               </li>
               <li>2 ServiceAccounts, with a token Secret each</li>
               <li>1 Role and 1 RoleBinding covering both</li>
+              {hasSecret && (
+                <li>
+                  1 Opaque Secret <code>{result.namespace}-api</code> — <strong>do not commit it</strong>
+                </li>
+              )}
             </ul>
           </section>
         )}

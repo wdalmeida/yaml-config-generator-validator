@@ -39,12 +39,13 @@ describe('KubernetesWorkspace storage', () => {
 
   const storedValues = () => Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? '')
 
-  it('persists the two inputs and nothing else', () => {
+  it('persists the allow-listed inputs and nothing else', () => {
     fillIn()
     expect(Object.keys(localStorage)).toEqual([`yaml-config-generator:${kubernetesDraftKey()}`])
     expect(JSON.parse(localStorage.getItem(`yaml-config-generator:${kubernetesDraftKey()}`) ?? '{}')).toEqual({
       tenant: 'acme',
       product: 'widgets',
+      namespace: '',
     })
   })
 
@@ -99,7 +100,7 @@ describe('KubernetesWorkspace inputs that are not on the allow-list', () => {
 
     const stored = localStorage.getItem(`yaml-config-generator:${kubernetesDraftKey()}`) ?? ''
     expect(stored).not.toContain(SECRET)
-    expect(JSON.parse(stored || '{}')).toEqual({ tenant: '', product: '' })
+    expect(JSON.parse(stored || '{}')).toEqual({ tenant: '', product: '', namespace: '' })
   })
 
   it('scrubs a value an older build left under the same key', () => {

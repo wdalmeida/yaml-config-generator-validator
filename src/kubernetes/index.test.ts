@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   emptyKubernetesDraft,
+  SECRET_KUBERNETES_KEYS,
   getKubernetesStatus,
   kubernetesDraftKey,
   persistedKubernetesDraft,
@@ -17,24 +18,50 @@ describe('the Kubernetes persistence allow-list', () => {
   // written to localStorage, where any script on the origin can read it and where it outlives the
   // tab. Adding one is asserting "this value is not a secret", which is a decision worth making
   // in a review rather than by autocomplete - so growing the list has to break a test first.
-  it('contains exactly the two values that are not secrets', () => {
-    expect(PERSISTED_KUBERNETES_KEYS).toEqual(['tenant', 'product'])
+  it('contains exactly the values that are not secrets', () => {
+    expect(PERSISTED_KUBERNETES_KEYS).toEqual(['tenant', 'product', 'namespace'])
+  })
+
+  // The single most important assertion in this file: apiSecret is a secret by construction, and
+  // the list above is what decides whether it outlives the tab. A refactor that "tidied up" the
+  // three tiers into one would show up here first.
+  it('does not contain the API secret', () => {
+    expect(PERSISTED_KUBERNETES_KEYS).not.toContain('apiSecret')
+    expect(persistedKubernetesDraft({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toEqual({
+      tenant: 'acme',
+      product: 'widgets',
+      namespace: '',
+    })
+  })
+
+  // Stated as a rule rather than as a fact about today's two fields, so it still holds for the
+  // next secret someone adds: a field marked `secret: true` may never be on the storage list.
+  it('shares no key with the set of fields marked secret', () => {
+    expect(SECRET_KUBERNETES_KEYS).toEqual(['apiSecret'])
+    for (const key of SECRET_KUBERNETES_KEYS) {
+      expect(PERSISTED_KUBERNETES_KEYS, `"${key}" is marked secret and is on the storage list`).not.toContain(key)
+    }
   })
 
   it('drops any key that is not on the list', () => {
     const narrowed = persistedKubernetesDraft({
       tenant: 'acme',
       product: 'widgets',
+      namespace: '',
       registryToken: 'ghp_SUPERSECRET123',
     })
 
-    expect(narrowed).toEqual({ tenant: 'acme', product: 'widgets' })
+    expect(narrowed).toEqual({ tenant: 'acme', product: 'widgets', namespace: '' })
     expect(JSON.stringify(narrowed)).not.toContain('SUPERSECRET')
   })
 
   it('coerces a missing or non-string value rather than passing it through', () => {
-    expect(persistedKubernetesDraft({})).toEqual({ tenant: '', product: '' })
-    expect(persistedKubernetesDraft({ tenant: 7, product: null })).toEqual({ tenant: '7', product: '' })
+    expect(persistedKubernetesDraft({})).toEqual({ tenant: '', product: '', namespace: '' })
+    expect(persistedKubernetesDraft({ tenant: 7, product: null })).toEqual({
+      tenant: '7',
+      product: '',
+      namespace: '',
+    })
   })
 
   // The read side matters as much as the write side: a build that once persisted a secret would
@@ -46,7 +73,12 @@ describe('the Kubernetes persistence allow-list', () => {
       JSON.stringify({ tenant: 'acme', product: 'widgets', registryToken: 'ghp_SUPERSECRET123' }),
     )
 
-    expect(readKubernetesDraft()).toEqual({ tenant: 'acme', product: 'widgets' })
+    expect(readKubernetesDraft()).toEqual({ tenant: 'acme', product: 'widgets', namespace: '' })
+  })
+
+  it('keeps the pill status independent of the secret, which is optional', () => {
+    expect(getKubernetesStatus({ tenant: 'acme', product: 'widgets' })).toBe('valid')
+    expect(getKubernetesStatus({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toBe('valid')
   })
 
   it('still reports the pill status from what it did read', () => {

@@ -75,6 +75,13 @@ shape invites someone to fill a real one in before applying.
 of which is a secret by any reading. Everything else is held in component state for as long as
 the tab is open and is dropped on the way to storage by `persistedKubernetesDraft`.
 
+There are two tiers, and the default is the strict one:
+
+| Tier | Where | Lives until | What is on it |
+| --- | --- | --- | --- |
+| `PERSISTED_KUBERNETES_KEYS` | `localStorage` | cleared by hand | `tenant`, `product` |
+| *(not on the list)* | memory only | the page unloads | `apiSecret`, and anything added later |
+
 The direction is the point. These resources will eventually need a real secret typed in — a
 registry credential, a token that already exists — and with a list of keys to *exclude*, adding
 that input would persist it by default: the value simply appears in storage, readable by any
@@ -92,6 +99,77 @@ Three consequences worth knowing before changing this:
   first write rather than being read back into state and re-saved.
 - **`src/kubernetes/index.test.ts` pins the list's exact contents**, so growing it fails a test
   before it ships. Adding a key there is asserting that value is not a secret.
+
+### The API secret
+
+`apiSecret` is the one input that is a secret by construction rather than by accident, and it is
+stored **nowhere**: it lives in component state and is written to no browser store.
+
+**`sessionStorage` was built for this value and then removed**, which is worth recording because it
+looks like the obvious answer. It is scoped to one tab and dropped when that tab closes, so it
+reads as a reasonable middle ground. It is not, against the threat that actually matters here. A
+`sessionStorage` entry is readable by any script running on the origin for as long as the tab is
+open — a compromised dependency, an injected script, anything else on the page — so it offers no
+protection against the thing most likely to go after a credential. What it does add is a window
+during which the value sits somewhere enumerable by key. Component state is not immune either, but
+it is not enumerable and it does not survive a reload.
+
+**The cost is real, and was accepted deliberately**: the secret is gone on reload, on navigating
+away, and on switching to another pill, since `App` mounts one workspace at a time. The note beside
+the field says so in as many words — the failure mode to avoid is someone discovering it by losing
+a value they had pasted and no longer have. Copy the output before leaving the page.
+
+`SECRET_KUBERNETES_KEYS` is **derived** from the field descriptors (`secret: true`) rather than
+written out a second time, so marking a new field secret is the only edit needed to bring it under
+this rule, and a test asserts the two lists never share a key.
+
+Three details of the rendered Secret are deliberate:
+
+- **`stringData`, not `data`.** Base64 is an encoding, not encryption. Writing the value out
+  encoded would make it *look* protected while being exactly as readable, and `kubectl` accepts
+  `stringData` directly. The output says so in a comment.
+- **Blank means the Secret is omitted entirely**, not emitted empty. Applying
+  `stringData: {api_secret: ""}` would cheerfully overwrite a real secret already in the cluster
+  with nothing; an absent document cannot.
+- **The document carries a "do not commit" banner.** Every other file this tool produces is meant
+  to be committed to a repository. This one is the exception, and the warning has to survive the
+  copy/paste into a terminal, so it lives in the YAML rather than only in the UI.
+
+**The input is not masked, on purpose.** A `type="password"` box would be theatre here: the value
+is rendered in plain text in the output panel a few hundred pixels to the right, because producing
+that manifest is the entire point of the field. Masking the input while printing the value beside
+it buys nothing and suggests a protection that isn't there. What the `secret: true` flag on the
+`FieldDescriptor` does instead is real — `autocomplete="off"`, `autocorrect="off"` and
+`spellcheck="false"`, each of which otherwise hands the value to machinery nobody chose (a password
+manager, an autocorrect dictionary, a remote spell-checking service). If masking is wanted anyway,
+it is a one-line change in `FieldRow` — flagging the reasoning, not refusing the request.
+
+**Clear secrets** blanks every field marked `secret: true` and the rendered output. It is named for
+the category rather than for today's single field, so a second secret input is covered without the
+label quietly becoming a lie. There is no storage for it to clear; it exists because the value is on
+screen until something removes it, and "I am about to share this screen" is the case it is for.
+
+## Naming the namespace
+
+The namespace is `<tenant>-<product>` unless the **Namespace** field is filled in, in which case
+that name is used verbatim. Every other object is named from the namespace, so an override moves
+all of them — the ServiceAccounts, their token Secrets, the Role, the RoleBinding and the API
+Secret — rather than relabelling one object and leaving the rest pointing at the old name.
+
+Three things about it:
+
+- **Tenant and product are still required.** They are the identity, not just raw material for a
+  name: they label the Namespace object, they are what the onboarding checklist seeds, and the
+  override renames the namespace rather than replacing what it stands for.
+- **A typed namespace gets the same DNS-1123 check as a derived one.** It is free text on the way
+  in exactly like the tenant is, and being specific about a name is not evidence that it is legal.
+- **It is on the storage allow-list.** A namespace is a name, not a secret. Adding it there was a
+  deliberate edit that failed `src/kubernetes/index.test.ts` first, which is the mechanism working:
+  the pinned list is what makes "is this a secret?" a question somebody has to answer.
+
+The form shows the derived value live, spelled `<tenant>-<product>` while those are empty — with
+both blank the derivation is literally `-`, which shown on its own reads as a bug rather than as a
+template.
 
 What this does *not* cover: the clipboard. **Copy all** puts the whole rendered stream on the
 system clipboard, which is the point of the pill, and a secret filled into an input would be in

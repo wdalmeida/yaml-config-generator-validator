@@ -44,3 +44,9 @@ export function writePersistedState<T>(key: string, value: T): boolean {
     return false
   }
 }
+
+// There is deliberately no sessionStorage twin of the above. It was written, and removed: a
+// sessionStorage value is readable by any script on the origin for as long as the tab is open, so
+// for the one value that motivated it - the Kubernetes API secret - it bought an exposure window
+// without buying protection. A secret is held in component state and nowhere else. See
+// src/kubernetes/index.ts and docs/kubernetes-resources.md.
