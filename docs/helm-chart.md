@@ -277,7 +277,7 @@ produces `run-as-non-root` and `no-read-only-root-fs` findings and exit code 1.
 ## Sizing, measured
 
 The defaults in `values.yaml` are load-tested, not guessed. Reproduce any of this with
-`just loadtest` (see [the script](../scripts/helm-loadtest.sh) for what it does).
+`just loadtest` (see [the command](../tools/cmd/helm-loadtest/main.go) for what it does).
 
 **Method.** One replica, `fortio` driving load from inside the cluster, on a single-node
 `kind` cluster (Kubernetes v1.37) with 4 CPUs and ~2 GiB. Two workloads: the 484-byte
@@ -348,7 +348,7 @@ throughput.
 The chart limits memory and not CPU, for the reasons above. Plenty of platforms don't allow
 that. With both limits set, this is what one replica does across the concurrency range —
 20 s at max rate against the JS bundle, memory 128Mi, measured with
-`scripts/helm-capacity.sh`:
+`tools/cmd/helm-capacity`:
 
 | Limite CPU | 1 connexion | 10 connexions | 100 connexions | 1 000 connexions |
 |---|---|---|---|---|

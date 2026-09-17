@@ -180,8 +180,8 @@ pushed, see below.
 |---|---|---|---|
 | `hadolint` | [hadolint](https://github.com/hadolint/hadolint) | GPL-3.0 | Lints **both** Containerfiles: missing `USER`, unpinned bases, name-based UIDs, shell anti-patterns in `RUN`. One invocation over both files — each finding names its own file — so it stays one artifact and one code-scanning category. SARIF → **Security → Code scanning** + artifact. |
 | `build` | buildah + podman (runner-preinstalled) | Apache-2.0 | Builds `--format oci` with commit-derived timestamps, then **runs** the image locked down exactly as documented above and asserts it works: `/healthz`, the real page, the SPA fallback, the expected non-root user (`101:101` or `65532:0`), and every security header `container/nginx.conf` sets (including no nginx version banner). Exports the tested image twice for the jobs below — an OCI archive for `publish` to push, a Docker-format archive for the scanners (neither reads an OCI archive tarball) — and generates a CycloneDX SBOM of it with Syft. |
-| `scan` | [Trivy](https://github.com/aquasecurity/trivy) | Apache-2.0 | Scans the built image for OS/language CVEs, embedded secrets and misconfiguration. Reports everything as SARIF; fails only on **fixable** HIGH/CRITICAL, so unfixed advisories stay visible without permanently reddening the build. |
-| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Second, independent pass over the **image** against the OSV.dev database — different engine, different data source from Trivy. Held to the same bar as the Trivy gate (fixable, CVSS ≥ 7.0), read out of its JSON since it has no severity flag of its own. |
+| `scan` | [Trivy](https://github.com/aquasecurity/trivy) | Apache-2.0 | Scans the built image for OS/language CVEs, embedded secrets and misconfiguration. Reports everything as SARIF; fails only on **fixable** HIGH/CRITICAL, so unfixed advisories stay visible without permanently reddening the build. The gate and the coverage warning both read one JSON pass, through `go run ./tools/cmd/scan-gate trivy`. |
+| `sca` | [OSV-Scanner](https://github.com/google/osv-scanner) | Apache-2.0 | Second, independent pass over the **image** against the OSV.dev database — different engine, different data source from Trivy. Held to the same bar as the Trivy gate (fixable, CVSS ≥ 7.0) by the same command, read out of its JSON since it has no severity flag of its own. |
 | `publish` | skopeo + `actions/attest*` | Apache-2.0 | **`main` only, Alpine image only**, and only if every job above passed *for both images* (`needs:` on a matrixed job waits for every leg, so a broken Red Hat build blocks the Alpine push too): pushes the exact archive that was smoke-tested to `ghcr.io/wdalmeida/yaml-config-generator-validator` (no rebuild), then attaches SLSA build provenance and the SBOM as Sigstore-signed attestations, pushed to the registry alongside the image. |
 
 The identity assertion is two checks rather than `podman exec smoke id -u`: the Red Hat
@@ -270,6 +270,46 @@ Two knock-on effects worth knowing:
 `supply-chain.yml`'s npm passes are unaffected — a lockfile and an npm SBOM have no
 binary/source split, and one of those two passes reads the repository directly anyway.
 
+## The severity gates are one command
+
+Both scanners are held to the same bar — **a finding blocks the build only if it is
+HIGH/CRITICAL *and* fixable** — and both get there by running the same thing:
+
+```sh
+go run ./tools/cmd/scan-gate trivy <report.json>   # exit 1 on a fixable HIGH/CRITICAL
+go run ./tools/cmd/scan-gate osv   <report.json>
+```
+
+This used to be about 35 lines of Python embedded in a `run:` block, *written out twice* — once
+in the `sca` job and once again in the justfile's `image-sca` recipe — with a comment on each
+copy saying "change one, change the other". The reason was structural rather than lazy: the job
+downloads an image artifact and never checks the repository out, so there was no script file for
+it to call.
+
+**Extending the sparse checkout is what fixed it.** Each scan job now fetches its own acceptance
+file *plus* `tools/`, `go.mod` and `go.sum` — and nothing else. The property that made the
+sparse checkout worth having in the first place is unchanged: `src/`, `charts/`, `docs/` and
+`.github/` are still never fetched, so neither job can accidentally scan working-tree sources
+instead of the image.
+
+Three things about the gate are easy to get wrong if it is ever rewritten:
+
+- **It knows nothing about dates, and must not learn.** Each scanner is run with its own
+  acceptance file (`--ignorefile .trivyignore.yaml` / `--config osv-scanner.toml`), which
+  removes an accepted finding from the JSON *before* the gate parses it. That is precisely what
+  makes the expiry work by itself: when the date passes, the finding reappears in the JSON and
+  the build goes red, with nothing to update here.
+- **`--ignore-unfixed` applies to vulnerabilities, not secrets.** A HIGH or CRITICAL secret has
+  no fixed version to have, so "unfixable, therefore ignore" would silently drop a credential
+  baked into the image — the one finding you least want filtered. Secrets block regardless.
+- **OSV's `max_severity` lives on the group, not the vulnerability.** It has to be mapped back
+  onto every id the group lists before any per-finding decision; skip that and every id scores
+  zero and the gate passes everything, quietly.
+
+`tools/internal/scan/testdata` holds real captured output from the pinned Trivy and OSV-Scanner
+against a real image — including a genuine before/after pair showing an acceptance file removing
+a finding from the JSON — and its `README` records how each fixture was produced.
+
 ## Accepting a CVE you can't fix, with a deadline
 
 Almost every CVE the scanners find in this image is in the Alpine base, not in anything this
@@ -289,8 +329,11 @@ Three things about this are easy to get wrong:
   would live forever. `container.yml` passes `--ignorefile .trivyignore.yaml` explicitly, and
   that explicitness is the feature.
 - **Neither scan job checks out the repo** — they scan an artifact the `build` job produced.
-  Each now does a *sparse* checkout of just its own acceptance file, so the job still can't
-  accidentally scan working-tree sources instead of the image.
+  Each does a *sparse* checkout of its own acceptance file plus `tools/` (with `go.mod` and
+  `go.sum`), and nothing else: `src/`, `charts/`, `docs/` and `.github/` are never fetched, so
+  the job still can't accidentally scan working-tree sources instead of the image. That sparse
+  checkout is also what let the severity gate stop being written twice — see
+  [the gates](#the-severity-gates-are-one-command).
 - **OSV-Scanner's `ignoreUntil` removes the finding from its JSON**, which is what lets the
   CVSS≥7.0 gate in that job keep working unchanged. It also prints an "unused ignores" list,
   so an entry that has outlived its finding announces itself rather than lingering.

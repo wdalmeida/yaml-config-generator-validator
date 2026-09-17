@@ -55,6 +55,7 @@ kubeconform_version   := `grep -rhoE 'KUBECONFORM_VERSION:[[:space:]]*[0-9.]+' .
 kubelinter_version    := `grep -rhoE 'KUBE_LINTER_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 helmunittest_version  := `grep -rhoE 'HELM_UNITTEST_VERSION:[[:space:]]*[0-9.]+' .github/workflows | head -1 | grep -oE '[0-9.]+'`
 node_major            := `grep -ohE 'node-version: [0-9]+' .github/workflows/ci.yml | head -1 | awk '{print $2}'`
+go_version            := `grep -ohE "go-version: '[0-9.]+'" .github/workflows/ci.yml | head -1 | grep -oE '[0-9.]+'`
 
 [private]
 default:
@@ -323,7 +324,7 @@ doctor *flags:
 
     # Everything else the recipes lean on but no workflow pins.
     echo
-    for name in node npm podman jq python3 curl git uv gh; do
+    for name in node npm go podman jq curl git uv gh; do
       if command -v "$name" >/dev/null; then
         printf '%-14s %s\n' "$name" "$($name --version 2>&1 | head -1)"
       else
@@ -335,6 +336,11 @@ doctor *flags:
     node_have="$(node --version 2>/dev/null | tr -d v | cut -d. -f1)"
     [ -n "$node_have" ] && [ "$node_have" != "{{node_major}}" ] && \
       echo "note: workflows run node {{node_major}}, this shell has node ${node_have}"
+    # Go is a toolchain, not a pinned binary in .ci-tools, so it is a note like node's. A newer
+    # one is fine: go.mod names the language floor, not an exact toolchain.
+    go_have="$(go version 2>/dev/null | awk '{print $3}' | tr -d go)"
+    [ -n "$go_have" ] && [ "$go_have" != "{{go_version}}" ] && \
+      echo "note: workflows run go {{go_version}}, this shell has go ${go_have}"
     [ "${#missing[@]}" -gt 0 ] && echo "missing: ${missing[*]} - run \`just install\`"
     [ "${#drifted[@]}" -gt 0 ] && echo "drifted: ${drifted[*]} - Homebrew tracks latest; \`just install-pinned\` fetches the pinned build into {{tools_bin}}"
     [ "${#missing[@]}" -eq 0 ] && [ "${#drifted[@]}" -eq 0 ] && echo "every pinned tool is installed at the version its workflow pins"
@@ -347,7 +353,7 @@ doctor *flags:
 
 # Everything ci.yml runs, each job reported pass/fail (see `just install` first)
 [group('ci')]
-ci: (_run "lint build size coverage schemas markdown links audit actionlint gitleaks zizmor plumber helm")
+ci: (_run "lint build size coverage schemas go markdown links audit actionlint gitleaks zizmor plumber helm")
 
 # ci.yml test job: oxlint (human-readable, then SARIF)
 [group('ci')]
@@ -380,6 +386,23 @@ coverage:
 [group('ci')]
 schemas:
     npm run lint:schemas
+
+# ci.yml go job: gofmt check, then build/vet/test the tools/ module
+[group('ci')]
+go:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Same four steps, in the same order, as ci.yml's `go` job. gofmt -l exits 0 whatever it
+    # finds, so the check is the emptiness of its output rather than its status.
+    unformatted="$(gofmt -l .)"
+    if [ -n "$unformatted" ]; then
+      echo "gofmt would rewrite these files:" >&2
+      printf '%s\n' "$unformatted" >&2
+      exit 1
+    fi
+    go build ./...
+    go vet ./...
+    go test ./...
 
 # ci.yml markdown job: markdownlint-cli2 (writes its own SARIF, see .markdownlint-cli2.jsonc)
 [group('ci')]
@@ -462,7 +485,7 @@ loadtest *args:
     # seconds, path).
     kubectl cluster-info >/dev/null 2>&1 || { echo "no reachable cluster - kubectl cluster-info fails" >&2; exit 1; }
     if [ -n "{{args}}" ]; then
-      scripts/helm-loadtest.sh {{args}}
+      go run ./tools/cmd/helm-loadtest {{args}}
       exit 0
     fi
     # The bundle is what every page load actually fetches, so it - not the 484-byte index -
@@ -473,11 +496,11 @@ loadtest *args:
     asset="${asset:-}"
     echo "== memory floor, 100 connections on ${asset:-/} =="
     for m in 32Mi 64Mi 128Mi; do
-      scripts/helm-loadtest.sh "mem-$m" 10m none "$m" 100 15 "/${asset}"
+      go run ./tools/cmd/helm-loadtest "mem-$m" 10m none "$m" 100 15 "/${asset}"
     done
     echo "== cpu, 16 connections on ${asset:-/} =="
     for c in none 250m 100m 50m 20m; do
-      scripts/helm-loadtest.sh "cpu-$c" 10m "$c" 128Mi 16 15 "/${asset}"
+      go run ./tools/cmd/helm-loadtest "cpu-$c" 10m "$c" 128Mi 16 15 "/${asset}"
     done
 
 [group('ci')]
@@ -694,14 +717,16 @@ image-scan: _out
     test -f "{{out}}/image-docker.tar" || { echo "no image archive - run \`just image-build\` first" >&2; exit 1; }
     trivy image --input "{{out}}/image-docker.tar" \
       --scanners vuln,secret,misconfig \
+      --ignorefile .trivyignore.yaml \
       --format sarif --output "{{out}}/trivy-results.sarif"
     # Two passes over the same cached DB, as in the workflow: the SARIF above reports
-    # everything, this one is the gate.
+    # everything, this JSON feeds the gate and the coverage line together.
     trivy image --input "{{out}}/image-docker.tar" \
       --scanners vuln,secret \
-      --severity HIGH,CRITICAL \
-      --ignore-unfixed \
-      --exit-code 1
+      --list-all-pkgs \
+      --ignorefile .trivyignore.yaml \
+      --format json --output "{{out}}/trivy-gate.json" --quiet
+    go run ./tools/cmd/scan-gate trivy "{{out}}/trivy-gate.json"
 
 # container.yml sca job: OSV-Scanner over the image (not its SBOM - see docs/container.md)
 [group('container')]
@@ -710,51 +735,18 @@ image-sca: _out
     set -euo pipefail
     test -f "{{out}}/image-docker.tar" || { echo "no image archive - run \`just image-build\` first" >&2; exit 1; }
     osv-scanner scan image --archive "{{out}}/image-docker.tar" \
+      --config osv-scanner.toml \
       --format sarif --output-file "{{out}}/osv-results-container.sarif" \
       --verbosity error || true
     test -s "{{out}}/osv-results-container.sarif"
     osv-scanner scan image --archive "{{out}}/image-docker.tar" \
+      --config osv-scanner.toml \
       --format json --output-file "{{out}}/osv-results-container.json" \
       --verbosity error || true
-    # Kept in step with container.yml's gate (fixable, CVSS >= 7.0 - the same bar Trivy's
-    # --severity HIGH,CRITICAL --ignore-unfixed applies). Duplicated rather than shared as a
-    # script file because that job downloads artifacts without checking the repo out, so it
-    # has no file to call - change one, change the other.
-    python3 - "{{out}}/osv-results-container.json" <<'PY'
-    import json, sys
-
-    with open(sys.argv[1]) as handle:
-        report = json.load(handle)
-
-    blocking = []
-    reported = 0
-    for result in report.get('results', []):
-        for package in result.get('packages', []):
-            severity_by_id = {
-                vuln_id: float(group['max_severity'])
-                for group in package.get('groups', [])
-                if group.get('max_severity')
-                for vuln_id in group.get('ids', [])
-            }
-            for vuln in package.get('vulnerabilities', []):
-                reported += 1
-                severity = severity_by_id.get(vuln['id'], 0.0)
-                fixed = any(
-                    'fixed' in event
-                    for affected in vuln.get('affected', [])
-                    for range_ in affected.get('ranges', [])
-                    for event in range_.get('events', [])
-                )
-                if severity >= 7.0 and fixed:
-                    name = package['package']['name']
-                    version = package['package']['version']
-                    blocking.append(f"{vuln['id']} {name} {version} (CVSS {severity})")
-
-    for finding in sorted(set(blocking)):
-        print(finding)
-    print(f'{reported} vulnerabilities reported, {len(set(blocking))} of them fixable HIGH/CRITICAL')
-    sys.exit(1 if blocking else 0)
-    PY
+    # The same command container.yml runs, byte for byte. It used to be ~35 lines of Python
+    # restated in both places, because that job downloads artifacts without checking the repo
+    # out and so had no file to call; it now sparse-checks-out tools/ beside its ignore file.
+    go run ./tools/cmd/scan-gate osv "{{out}}/osv-results-container.json"
 
 # Serve the built image the way docs/container.md tells people to run it (Ctrl-C to stop)
 [group('container')]

@@ -23,6 +23,7 @@ minutes. `postCreateCommand` then runs `npm ci` and prints `just doctor`.
 | | |
 |---|---|
 | Node 24, npm | matches `node-version: 24` in the workflows |
+| Go | matches `go-version:` in the workflows — `ci.yml`'s `go` job and the `tools/` module every check now runs through |
 | just, jq, python3, uv, gh | what the recipes themselves lean on |
 | actionlint, gitleaks, zizmor, plumber | `ci.yml`'s workflow/secret scanners |
 | syft, osv-scanner, semgrep | `supply-chain.yml`'s SBOM and SCA/SAST passes |
@@ -41,6 +42,12 @@ The image does **not** carry its own list of tool versions. It copies in `justfi
 `.github/workflows` and runs `just install-pinned <tool>` for each one, which reads the
 version out of the workflow that pins it — the same string Renovate's custom managers bump
 weekly. A rebuilt image therefore runs, by construction, the versions CI runs.
+
+The Go toolchain follows the same rule by a slightly different route. It isn't a
+`just install-pinned` tool — it's a toolchain rather than a release binary, and its checksums
+live in its release JSON rather than in a sibling `.sha256` — so the Dockerfile installs it
+directly, reading the version with `just --evaluate go_version`, which is the same grep of
+`ci.yml` the justfile already does. Still no second list, still checksum-verified.
 
 Three tools are the exception, because they have to exist before `just` can install anything:
 `just` itself, `uv` and `gh`. Those are pinned as `ARG`s in `.devcontainer/Dockerfile`,

@@ -40,12 +40,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
       - run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # Same command as ci.yml's `links` job, pointed at the other config: that file is what
+      # decides whether external URLs are checked at all.
       - name: Check external links
         id: links
         continue-on-error: true
-        run: npm run lint:links:external 2>&1 | tee link-report.txt
+        run: go run ./tools/cmd/check-markdown-links .markdown-link-check.external.json 2>&1 | tee link-report.txt
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
