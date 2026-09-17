@@ -87,7 +87,7 @@ and fails unless each of them reports success **or skipped**. Requiring it - and
 buys two things:
 
 - **`ci.yml`'s jobs can be skipped safely.** Each job is gated on whether a PR actually touched
-  files it cares about (`scripts/changed-buckets.sh`), so a docs-only PR skips the build. The
+  files it cares about (`tools/cmd/changed-buckets`), so a docs-only PR skips the build. The
   alternative - a workflow-level `paths:` filter - is a trap here: a workflow skipped by a path
   filter never creates its check runs at all, so a required check would sit *Pending* forever
   and the PR could never merge. Gating inside the workflow, behind a gate job that always runs,

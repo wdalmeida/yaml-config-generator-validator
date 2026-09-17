@@ -4,7 +4,7 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "enabledManagers": ["github-actions", "custom.regex", "npm", "dockerfile"],
+  "enabledManagers": ["github-actions", "custom.regex", "npm", "dockerfile", "gomod"],
   "minimumReleaseAge": "7 days",
   "schedule": ["before 6am on monday"],
   "configMigration": true,
@@ -130,6 +130,18 @@
     },
     {
       "customType": "regex",
+      "description": "The Go toolchain the workflows install with actions/setup-go, for the tools/ module (the CI logic that used to be shell and inline Python). setup-go's version is not a `uses:` pin, so the github-actions manager cannot see it; it is written as a quoted literal in ci.yml, container.yml and link-check.yml and matched in all of them so a bump keeps them in sync. The justfile greps this same string for `just doctor`. This is separate from the gomod manager in enabledManagers, which owns go.mod's own `go` directive and the module's dependencies - the two are different things, and bumping one does not imply the other.",
+      "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
+      "matchStrings": [
+        "go-version: '(?<currentValue>[0-9.]+)'"
+      ],
+      "depNameTemplate": "golang/go",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^go(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
       "description": "OSV-Scanner, downloaded and checksum-verified directly from GitHub Releases via an OSV_SCANNER_VERSION env var in both container.yml (image scanning, which google/osv-scanner-action has no mode for) and osv-scan.yml (where the action was dropped because its container image pull cost 17-18s per pass against ~1s for the binary) - matched in both files so a bump keeps them in sync.",
       "managerFilePatterns": ["/^\\.github/workflows/.*\\.ya?ml$/"],
       "matchStrings": [
@@ -183,6 +195,11 @@
       "matchManagers": ["dockerfile"],
       "matchFileNames": [".devcontainer/Dockerfile"],
       "groupName": "devcontainer base image"
+    },
+    {
+      "description": "The tools/ Go module's own dependencies, in one weekly PR. Deliberately NOT automerged, unlike the npm minor/patch group: this module is the CI logic itself - the severity gates container.yml's scan and sca jobs run, the bucket classification ci.yml gates on - so a bump here changes what the checks do rather than what the app ships. ci.yml's `go` job builds, vets and tests it on every PR, so a breaking bump is caught; it is reviewed anyway, because a green test suite is not the same thing as an unchanged gate.",
+      "matchManagers": ["gomod"],
+      "groupName": "go modules"
     },
     {
       "description": "Batch every npm minor/patch bump into one weekly PR (react, vite, typescript, @codemirror/*, etc.) and automerge once CI passes (full lint/build/test/schema suite). Majors are deliberately excluded from both grouping and automerge - each gets its own PR for manual review, since a major bump is more likely to need actual code changes.",

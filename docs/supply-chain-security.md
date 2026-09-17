@@ -293,7 +293,8 @@ a `run:` step rather than via a `uses:` action - see "Pinning tool versions insi
 scripts" below. Only Renovate can reach those, and once it's configured for GitHub Actions
 there's no reason to also keep Dependabot around just for npm.
 
-`renovate.json`'s `enabledManagers` is `["github-actions", "custom.regex", "npm"]`: the built-in
+`renovate.json`'s `enabledManagers` is
+`["github-actions", "custom.regex", "npm", "dockerfile", "gomod"]`: the built-in
 `github-actions` manager (confirmed by reading its
 [extractor source](https://github.com/renovatebot/renovate/blob/main/lib/modules/manager/github-actions/extract.ts))
 handles every regular `uses:` action pin plus `job.container`/`job.services` Docker digests as
@@ -303,7 +304,11 @@ Renovate's generic regex-based manager, used here for the tool versions no built
 understands (see below). `npm` is Renovate's own built-in npm manager - functionally equivalent
 to Dependabot's for this repo's purposes: it manages `package.json` and `package-lock.json`
 together (react, vite, typescript, everything in `dependencies`/`devDependencies`), same as
-Dependabot did. Everything shares the same 7-day `minimumReleaseAge` cooldown.
+Dependabot did. `dockerfile` covers both Containerfiles' digest-pinned base images and the
+devcontainer's. `gomod` covers the `tools/` Go module - `go.mod`, `go.sum` and the `go`
+directive itself; its group is deliberately **not** automerged, because that module is the CI
+gates rather than anything the app ships (see [container.md](container.md#the-severity-gates-are-one-command)).
+Everything shares the same 7-day `minimumReleaseAge` cooldown.
 
 **Requires one manual step**: unlike Dependabot (built into GitHub, no setup), Renovate needs
 its [GitHub App](https://github.com/apps/renovate) installed on this repo/org - free for public
@@ -311,10 +316,12 @@ repos. Nothing runs until that's done.
 
 ## Pinning tool versions inside `run:` scripts
 
-actionlint, gitleaks, zizmor, Syft, hadolint and Trivy aren't installed via a `uses:` action (see
-above for why, per-tool) - each is downloaded/installed at an exact version inside a `run:` step,
-which means neither Dependabot's nor Renovate's built-in `github-actions` manager can see them.
-`renovate.json` adds six `customManagers` (regex-based) to close this gap, one per tool:
+Most of the tools here aren't installed via a `uses:` action (see above for why, per-tool) -
+each is downloaded at an exact version inside a `run:` step, which means neither Dependabot's nor
+Renovate's built-in `github-actions` manager can see them. `renovate.json` adds one
+`customManagers` (regex-based) entry per tool to close that gap. The table below lists the ones
+worth calling out; `renovate.json` itself is the complete list, and each entry carries its own
+`description` explaining what it matches and why.
 
 | Tool | Where | What's tracked | Datasource |
 |---|---|---|---|
@@ -324,6 +331,7 @@ which means neither Dependabot's nor Renovate's built-in `github-actions` manage
 | Syft | `supply-chain.yml`'s `sbom` job, `release.yml`'s `build-and-attach` job and `container.yml`'s `build` job | The `SYFT_VERSION` env var, matched in all three files so a bump keeps them in sync | `github-releases` |
 | hadolint | `container.yml`'s `hadolint` job | The `HADOLINT_VERSION` env var | `github-releases` |
 | Trivy | `container.yml`'s `scan` job | The `TRIVY_VERSION` env var | `github-releases` |
+| Go toolchain | `ci.yml`, `container.yml` and `link-check.yml`'s `actions/setup-go` steps | The quoted `go-version: '...'` literal, matched in all three so a bump keeps them in sync. `setup-go` is a `uses:` action, but its *input* is not something the `github-actions` manager reads - that manager pins the action, not the toolchain it installs. The justfile greps this same string for `just doctor` | `github-tags` |
 
 **Each version must appear exactly once per matched line, or a regex-manager bump only rewrites
 the one occurrence it matched and leaves the rest stale.** The gitleaks step originally spelled

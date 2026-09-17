@@ -16,7 +16,7 @@ on:
       - 'Containerfile*'
       - '.containerignore'
       - '.devcontainer/**'
-      - 'scripts/**'
+      - 'tools/**'
       - '.trivyignore.yaml'
       - 'osv-scanner.toml'
       - '.kube-linter.yaml'

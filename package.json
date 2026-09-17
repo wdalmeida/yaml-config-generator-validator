@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "lint:schemas": "node scripts/validate-json-schemas.mjs",
-    "lint:ci-gate": "node scripts/check-ci-ok-covers-every-job.mjs",
+    "lint:schemas": "go run ./tools/cmd/validate-schemas",
+    "lint:ci-gate": "go run ./tools/cmd/check-ci-gate",
     "lint:md": "markdownlint-cli2 \"**/*.md\"",
-    "lint:links": "./scripts/check-markdown-links.sh",
-    "lint:links:external": "./scripts/check-markdown-links.sh .markdown-link-check.external.json",
+    "lint:links": "go run ./tools/cmd/check-markdown-links",
+    "lint:links:external": "go run ./tools/cmd/check-markdown-links .markdown-link-check.external.json",
     "lint:size": "size-limit",
     "preview": "vite preview",
     "test": "vitest run",
@@ -38,7 +38,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "@vitest/coverage-v8": "^5.0.0",
-    "ajv": "^8.20.0",
     "axe-core": "^4.13.0",
     "gh-pages": "^6.3.0",
     "jsdom": "^30.0.1",
@@ -57,9 +56,6 @@
     },
     "markdownlint-cli2": {
       "smol-toml": "^1.8.0"
-    },
-    "ajv": {
-      "fast-uri": "^3.1.6"
     }
   },
   "license": "MIT",

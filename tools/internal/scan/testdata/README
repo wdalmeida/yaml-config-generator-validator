@@ -1,0 +1,62 @@
+Fixtures for the severity gates. Plain text rather than Markdown on purpose: everything under
+testdata/ is excluded from the repo's own markdownlint and link checks, and a .md here would be
+the one file in the tree neither of them can see.
+
+Real output, captured from the pinned scanners
+----------------------------------------------
+Every file below except trivy-secret.json is what the tool actually printed - the gates are
+parsers, and a parser tested only against hand-written input tests the author's idea of the
+format rather than the format.
+
+  trivy-alpine.json            trivy 0.74.0, `image --scanners vuln --list-all-pkgs --format
+                               json` against docker.io/library/alpine:3.19. 15 packages,
+                               10 vulnerabilities, of which exactly one is fixable HIGH
+                               (CVE-2026-40200, musl + musl-utils). The rest are MEDIUM/LOW,
+                               which is the below-threshold case.
+  trivy-alpine-accepted.json   the same scan re-run with --ignorefile naming a .trivyignore.yaml
+                               that accepts CVE-2026-40200. The finding is GONE from the JSON:
+                               that is the whole acceptance mechanism, captured rather than
+                               assumed. When the expiry passes it comes back and the gate fails
+                               again, with no code change.
+  trivy-no-packages.json       trivy 0.74.0 against docker.io/library/hello-world: no OS, no
+                               packages, no findings, exit 0. This is the shape Project
+                               Hummingbird's Red Hat image produces for a different reason
+                               (ID="hummingbird" is in no distro map), and the reason the gate
+                               raises a workflow warning instead of reporting a clean image.
+                               See docs/container.md.
+  osv-alpine.json              osv-scanner 2.6.0, `scan image --archive` over the same image
+                               exported with `podman save --format docker-archive`. The same
+                               single blocking finding, as ALPINE-CVE-2026-40200 at CVSS 8.1,
+                               and the same below-threshold remainder at 2.5-4.8. It also
+                               repeats every finding across several results, which is what the
+                               gate's deduplication is for.
+  osv-alpine-accepted.json     the same scan with --config naming an osv-scanner.toml whose
+                               ignoreUntil covers ALPINE-CVE-2026-40200. Gone from the JSON,
+                               exactly as with Trivy.
+
+Derived, and why
+----------------
+  trivy-alpine-unfixed.json    trivy-alpine.json with CVE-2026-40200's FixedVersion cleared and
+  osv-alpine-unfixed.json      osv-alpine.json with ALPINE-CVE-2026-40200's `fixed` range events
+                               removed.
+
+Neither image to hand carried an unfixed HIGH, and "fixable" is the field each gate keys on, so
+the honest way to exercise it is to take the fix away from a real finding rather than to invent
+a report. Everything else in those two files is untouched real output.
+
+  trivy-secret.json            hand-written, and the one file here that is not real output.
+
+A genuine capture would mean committing a real-looking credential to this repository, which the
+gitleaks job scans on every push - the fixture would either fail CI or have to be excluded from
+it, and an exclusion in a secret scanner is a worse thing to own than a hand-written fixture. It
+carries only the fields the gate reads (RuleID, Title, Severity) and no match text at all. It
+exists because a HIGH/CRITICAL secret has no fixed version to have, so it must block anyway -
+`--ignore-unfixed` applies to vulnerabilities only, and a credential baked into an image is the
+finding you least want silently filtered.
+
+Refreshing these
+----------------
+Don't, unless the format changes. These are frozen inputs, not a live scan: a refresh that
+happens to drop the one blocking finding turns several tests green for the wrong reason. If the
+scanners' JSON shape does change, recapture with the commands named above and re-read the
+counts asserted in scan_test.go.

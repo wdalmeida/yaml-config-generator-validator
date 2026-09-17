@@ -90,7 +90,31 @@ RUN cd /tmp/ci-bootstrap \
                 helm kubeconform helm-unittest; do \
       just tools_dir=/usr/local install-pinned "$tool" || exit 1; \
     done \
- && rm -rf /tmp/ci-bootstrap /root/.cache
+ && rm -rf /root/.cache
+
+# The Go toolchain, for the tools/ module - ci.yml's `go` job and the severity gates
+# container.yml runs. Deliberately NOT a pinned ARG like just/uv/gh above: the version is read
+# out of the copied workflows through `just --evaluate go_version`, the same grep the justfile
+# already does, so this image still carries no tool-version list of its own and a Renovate bump
+# to the workflows lands here on the next rebuild for free.
+#
+# Go is not a `just install-pinned` tool because it is a toolchain rather than a release binary,
+# and its checksums live in its release JSON rather than a sibling .sha256 - the same shape as
+# kube-linter's, and the same trust root as the download itself.
+# hadolint ignore=DL3003
+RUN cd /tmp/ci-bootstrap \
+ && version="$(just --evaluate go_version)" \
+ && arch="$(dpkg --print-architecture)" \
+ && asset="go${version}.linux-${arch}.tar.gz" \
+ && want="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' \
+      | jq -r --arg a "$asset" '.[].files[] | select(.filename == $a) | .sha256')" \
+ && test -n "$want" \
+ && curl -fsSL -o "/tmp/${asset}" "https://go.dev/dl/${asset}" \
+ && echo "${want}  /tmp/${asset}" | sha256sum -c - \
+ && tar -C /usr/local -xzf "/tmp/${asset}" \
+ && ln -s /usr/local/go/bin/go /usr/local/bin/go \
+ && ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+ && rm -rf "/tmp/${asset}" /tmp/ci-bootstrap
 
 # kube-linter is the one tool from ci.yml's helm job this image cannot bake in. Its release
 # publishes no checksums file, so `just install-pinned kube-linter` reads the asset's sha256

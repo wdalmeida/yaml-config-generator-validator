@@ -1,0 +1,65 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.74.0"
+  },
+  "ReportID": "01a0af7f-f498-7a6b-881d-d40bc050322e",
+  "CreatedAt": "2026-09-17T15:13:13.624688+02:00",
+  "ArtifactID": "sha256:a1be074f7fa7d70001cc21a7cf87804865be8b3e6f355e448e45f5d32d1dd340",
+  "ArtifactName": "docker.io/library/hello-world",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 11776,
+    "ImageID": "sha256:e2ac70e7319a02c5a477f5825259bd118b94e8b02c279c67afa63adab6d8685b",
+    "DiffIDs": [
+      "sha256:897b3f2a7c1bc2f3d02432f7892fe31c6272c521ad4d70257df624504a3238b4"
+    ],
+    "RepoTags": [
+      "hello-world:latest"
+    ],
+    "RepoDigests": [
+      "hello-world@sha256:5e23090353324d887c48ad5e5c56d294eab81588df9605b07d1afe895f9cc8f8"
+    ],
+    "Reference": "hello-world:latest",
+    "ImageConfig": {
+      "architecture": "amd64",
+      "created": "2026-03-23T21:33:59.562202219Z",
+      "history": [
+        {
+          "created": "2026-03-23T21:33:59.562202219Z",
+          "created_by": "COPY hello / # buildkit",
+          "comment": "buildkit.dockerfile.v0"
+        },
+        {
+          "created": "2026-03-23T21:33:59.562202219Z",
+          "created_by": "CMD [\"/hello\"]",
+          "comment": "buildkit.dockerfile.v0",
+          "empty_layer": true
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:897b3f2a7c1bc2f3d02432f7892fe31c6272c521ad4d70257df624504a3238b4"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "/hello"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "WorkingDir": "/"
+      }
+    },
+    "Layers": [
+      {
+        "Size": 11776,
+        "Digest": "sha256:4f55086f7dd096d48b0e49be066971a8ed996521c2e190aa21b2435a847198b4",
+        "DiffID": "sha256:897b3f2a7c1bc2f3d02432f7892fe31c6272c521ad4d70257df624504a3238b4"
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+# Golden bucket classification, captured from scripts/changed-buckets.sh as it stood at commit
+# 2b2c3a3 (PR #49) - the bash implementation this package replaces.
+#
+# It is here because the parity check that produced it can only be run once: the script is
+# deleted in the same change that adds this file. Each row was produced by building a throwaway
+# git repository with a genuine `refs/pull/N/merge`-shaped merge commit touching exactly those
+# paths, running the real script against it with GITHUB_EVENT_NAME=pull_request, and recording
+# what it wrote to $GITHUB_OUTPUT. That is the same path the CI job takes, not a re-reading of
+# the regexes.
+#
+# The bash was validated on two real pull requests before it was frozen: on #49 it correctly hit
+# the force-everything rule (a .github/** file was touched) and on #50, a renovate.json-only
+# change, it correctly reported every bucket false.
+#
+# Format: <paths, | separated><TAB><bucket=value,...>. Lines starting with # are comments.
+#
+# Paths under scripts/ are deliberately absent: that directory does not survive this change.
+# TestMovedScriptsOnlyEverRunMore covers them instead, asserting that each replacement path
+# under tools/ classifies at least as widely as the script it replaced.
+src/App.tsx	app=true,schemas=true,markdown=false,links=false,deps=false,charts=false,workflows=false
+src/configs/schemas/ci.schema.json	app=true,schemas=true,markdown=false,links=false,deps=false,charts=false,workflows=false
+src/onboarding/tenant.onboarding.json	app=true,schemas=true,markdown=false,links=false,deps=false,charts=false,workflows=false
+public/favicon.svg	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+index.html	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+vite.config.ts	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+tsconfig.app.json	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+.oxlintrc.json	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+.size-limit.json	app=true,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+package.json	app=true,schemas=true,markdown=true,links=true,deps=true,charts=false,workflows=false
+package-lock.json	app=true,schemas=true,markdown=true,links=true,deps=true,charts=false,workflows=false
+README.md	app=false,schemas=false,markdown=true,links=true,deps=false,charts=false,workflows=false
+docs/container.md	app=false,schemas=false,markdown=true,links=true,deps=false,charts=false,workflows=false
+docs/img/capacity-latency.svg	app=false,schemas=false,markdown=false,links=true,deps=false,charts=false,workflows=false
+docs/capacity-report.html	app=false,schemas=false,markdown=false,links=true,deps=false,charts=false,workflows=false
+.markdownlint-cli2.jsonc	app=false,schemas=false,markdown=true,links=false,deps=false,charts=false,workflows=false
+.markdown-link-check.json	app=false,schemas=false,markdown=false,links=true,deps=false,charts=false,workflows=false
+.markdown-link-check.external.json	app=false,schemas=false,markdown=false,links=true,deps=false,charts=false,workflows=false
+LICENSE	app=false,schemas=false,markdown=false,links=true,deps=false,charts=false,workflows=false
+charts/yaml-config-generator-validator/values.yaml	app=false,schemas=false,markdown=false,links=true,deps=false,charts=true,workflows=false
+charts/yaml-config-generator-validator/ci/both-limits-values.yaml	app=false,schemas=false,markdown=false,links=true,deps=false,charts=true,workflows=false
+.kube-linter.yaml	app=false,schemas=false,markdown=false,links=false,deps=false,charts=true,workflows=false
+Containerfile	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+Containerfile.redhat	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+container/nginx.conf	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+.trivyignore.yaml	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+osv-scanner.toml	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+renovate.json	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+Brewfile	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+.devcontainer/Dockerfile	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+release-please-config.json	app=false,schemas=false,markdown=false,links=false,deps=false,charts=false,workflows=false
+README.md|charts/yaml-config-generator-validator/values.yaml	app=false,schemas=false,markdown=true,links=true,deps=false,charts=true,workflows=false
+.github/workflows/ci.yml	app=true,schemas=true,markdown=true,links=true,deps=true,charts=true,workflows=true
+README.md|.github/workflows/ci.yml	app=true,schemas=true,markdown=true,links=true,deps=true,charts=true,workflows=true
+justfile	app=true,schemas=true,markdown=true,links=true,deps=true,charts=true,workflows=true

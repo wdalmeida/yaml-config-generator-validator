@@ -15,9 +15,9 @@ concurrency:
 jobs:
   # Works out which categories of file a PR touched, so the jobs below can skip what a change
   # cannot possibly affect. Deliberately gates `pull_request` ONLY - every other event (push to
-  # main, the crons, a manual run) gets all-true from the script, so a mis-defined pattern is
-  # caught after the merge rather than never. See scripts/changed-buckets.sh, which also
-  # explains why any .github/** change forces every bucket on.
+  # main, the crons, a manual run) gets all-true, so a mis-defined pattern is caught after the
+  # merge rather than never. See tools/internal/buckets, which also explains why any .github/**
+  # change forces every bucket on.
   #
   # ci-ok below has this job in its `needs:`, so a failure here goes red rather than silently
   # skipping every job it gates.
@@ -34,14 +34,18 @@ jobs:
       workflows: ${{ steps.buckets.outputs.workflows }}
     steps:
       # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
-      # available, which is what the script diffs. Do NOT add a `ref:` here: it would replace
-      # the merge commit with the PR head and silently change what HEAD^1 means.
+      # available, which is what the classifier diffs. Do NOT add a `ref:` here: it would
+      # replace the merge commit with the PR head and silently change what HEAD^1 means.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
       - id: buckets
-        run: ./scripts/changed-buckets.sh
+        run: go run ./tools/cmd/changed-buckets
 
   test:
     runs-on: ubuntu-latest
@@ -91,6 +95,8 @@ jobs:
           sarif_file: oxlint-results.sarif
           category: oxlint
 
+  # No `npm ci` here any more: this check used to need ajv, and now needs nothing but the Go
+  # module and the JSON files it reads.
   schemas:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -98,12 +104,50 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint:schemas
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
+      - run: go run ./tools/cmd/validate-schemas
+
+  # The tools/ Go module: the CI logic that used to be shell and inline Python. Nothing else in
+  # this repo is Go, so this job is the only thing that compiles it - and container.yml's scan
+  # gates run it on every push, which makes "it builds" a release-blocking property rather than
+  # a nicety.
+  #
+  # Deliberately ungated for now, like every other job here: the `changes` job's buckets are not
+  # wired to `if:` conditions yet (that is the follow-up described in docs/releasing.md). When
+  # they are, note that a tools/ change already forces every bucket on - see
+  # tools/internal/buckets - so this job needs a bucket of its own only if it should skip on a
+  # src/-only change.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
+
+      # gofmt is not a style preference here, it is the diff hygiene that keeps a Renovate bump
+      # from arriving with unrelated reformatting in it. -l lists offenders and exits 0, so the
+      # check has to be the emptiness of the output.
+      - name: gofmt
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would rewrite these files:"
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
 
   # Renders the Helm chart and checks every manifest it produces against the real Kubernetes
   # API schemas. `helm lint` on its own only inspects the chart's own structure - it passes a
@@ -338,7 +382,7 @@ jobs:
   # half of link checking a pull request can actually break, by moving a file something links to.
   # External URLs are checked weekly by link-check.yml instead, because link rot is driven by
   # time rather than by the commit. Its bucket is wider than markdown's for exactly this reason:
-  # docs link out to charts/, scripts/ and LICENSE.
+  # docs link out to charts/, tools/ and LICENSE.
   links:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -350,8 +394,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
+      # markdown-link-check still resolves every link; the Go command is the loop around it and
+      # the exit-code aggregation `find -exec` could not do.
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint:links
+      - run: go run ./tools/cmd/check-markdown-links
 
   audit:
     runs-on: ubuntu-latest
@@ -381,12 +431,11 @@ jobs:
       # actionlint has nothing to say about ci-ok's needs: list, and that list is now the only
       # thing standing between a new job and being enforced by nothing. Lives here rather than
       # in its own job because it is a workflow-YAML lint by any other name.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint:ci-gate
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
+      - run: go run ./tools/cmd/check-ci-gate
         # No native SARIF output from actionlint itself (only a Go-template `-format`); findings
         # already surface as a failing check + readable log, which is sufficient here.
 
@@ -542,6 +591,7 @@ jobs:
       - changes
       - test
       - schemas
+      - go
       - helm
       - markdown
       - links

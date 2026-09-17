@@ -3,8 +3,8 @@
 How many concurrent connections one pod absorbs, and what each CPU and memory limit actually
 costs. Every figure here is measured on a real cluster — none estimated.
 
-Reproduce any of it with [`scripts/helm-capacity.sh`](../scripts/helm-capacity.sh) (both
-limits set) or [`scripts/helm-loadtest.sh`](../scripts/helm-loadtest.sh) (memory limit only).
+Reproduce any of it with [`tools/cmd/helm-capacity`](../tools/cmd/helm-capacity/main.go) (both
+limits set) or [`tools/cmd/helm-loadtest`](../tools/cmd/helm-loadtest/main.go) (memory limit only).
 [`capacity-report.html`](capacity-report.html) is the same report as an interactive page —
 open it straight from disk; GitHub won't render it in the repository view, which is why this
 Markdown version exists.
