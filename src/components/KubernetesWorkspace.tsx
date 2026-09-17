@@ -1,9 +1,11 @@
-import { lazy, Suspense, useState } from 'react'
-import { usePersistedState } from '../lib/persisted-state'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { writePersistedState } from '../lib/persisted-state'
 import {
   emptyKubernetesDraft,
   KUBERNETES_FIELDS,
   kubernetesDraftKey,
+  persistedKubernetesDraft,
+  readKubernetesDraft,
   renderManifests,
   type KubernetesDraft,
 } from '../kubernetes'
@@ -15,8 +17,17 @@ const YamlEditor = lazy(() => import('./YamlEditor'))
 // there is nothing to sync back. Editing the output would be editing a template's result, so
 // the field is read-only and there's no draft-from-YAML path at all - you copy it and apply it.
 export function KubernetesWorkspace() {
-  const [draft, setDraft] = usePersistedState<KubernetesDraft>(kubernetesDraftKey(), emptyKubernetesDraft)
+  // Deliberately not usePersistedState. That hook writes back whatever the state object holds,
+  // which makes persistence the default for every key the draft happens to carry - the wrong
+  // default on the one pill whose inputs will eventually include a secret. Here the draft is
+  // ordinary component state and the write is narrowed to the allow-list on the way out, so an
+  // input that nobody has explicitly cleared for storage simply never reaches it.
+  const [draft, setDraft] = useState<KubernetesDraft>(() => ({ ...emptyKubernetesDraft(), ...readKubernetesDraft() }))
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    writePersistedState(kubernetesDraftKey(), persistedKubernetesDraft(draft))
+  }, [draft])
 
   const result = renderManifests(draft)
 
@@ -45,7 +56,7 @@ export function KubernetesWorkspace() {
 
         {KUBERNETES_FIELDS.map((field) => (
           <section className="card-flat" key={field.key}>
-            <FieldRow field={field} value={draft[field.key as keyof KubernetesDraft]} onChange={(value) => setField(field.key, value)} />
+            <FieldRow field={field} value={draft[field.key] ?? ''} onChange={(value) => setField(field.key, value)} />
           </section>
         ))}
 
