@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   emptyKubernetesDraft,
-  sessionKubernetesDraft,
-  SESSION_KUBERNETES_KEYS,
+  SECRET_KUBERNETES_KEYS,
   getKubernetesStatus,
   kubernetesDraftKey,
   persistedKubernetesDraft,
@@ -28,18 +27,19 @@ describe('the Kubernetes persistence allow-list', () => {
   // three tiers into one would show up here first.
   it('does not contain the API secret', () => {
     expect(PERSISTED_KUBERNETES_KEYS).not.toContain('apiSecret')
-    expect(SESSION_KUBERNETES_KEYS).toEqual(['apiSecret'])
     expect(persistedKubernetesDraft({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toEqual({
       tenant: 'acme',
       product: 'widgets',
     })
   })
 
-  it('narrows the session tier the same way, and in the other direction', () => {
-    expect(sessionKubernetesDraft({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toEqual({
-      apiSecret: 's3cret',
-    })
-    expect(sessionKubernetesDraft({})).toEqual({ apiSecret: '' })
+  // Stated as a rule rather than as a fact about today's two fields, so it still holds for the
+  // next secret someone adds: a field marked `secret: true` may never be on the storage list.
+  it('shares no key with the set of fields marked secret', () => {
+    expect(SECRET_KUBERNETES_KEYS).toEqual(['apiSecret'])
+    for (const key of SECRET_KUBERNETES_KEYS) {
+      expect(PERSISTED_KUBERNETES_KEYS, `"${key}" is marked secret and is on the storage list`).not.toContain(key)
+    }
   })
 
   it('drops any key that is not on the list', () => {

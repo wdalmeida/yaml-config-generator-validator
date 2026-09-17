@@ -75,13 +75,12 @@ shape invites someone to fill a real one in before applying.
 of which is a secret by any reading. Everything else is held in component state for as long as
 the tab is open and is dropped on the way to storage by `persistedKubernetesDraft`.
 
-There are three tiers, and the default is the strictest:
+There are two tiers, and the default is the strict one:
 
 | Tier | Where | Lives until | What is on it |
 | --- | --- | --- | --- |
 | `PERSISTED_KUBERNETES_KEYS` | `localStorage` | cleared by hand | `tenant`, `product` |
-| `SESSION_KUBERNETES_KEYS` | `sessionStorage` | the tab closes | `apiSecret` |
-| *(neither list)* | memory only | the page unloads | anything added later |
+| *(not on the list)* | memory only | the page unloads | `apiSecret`, and anything added later |
 
 The direction is the point. These resources will eventually need a real secret typed in — a
 registry credential, a token that already exists — and with a list of keys to *exclude*, adding
@@ -104,14 +103,25 @@ Three consequences worth knowing before changing this:
 ### The API secret
 
 `apiSecret` is the one input that is a secret by construction rather than by accident, and it is
-on the **session** tier for a reason that cuts both ways. Keeping it out of `localStorage` is
-obvious. Keeping it in `sessionStorage` rather than memory alone is the less obvious half: a value
-that vanishes on every refresh is a value people copy somewhere more permanent and less careful — a
-note file, a chat message to themselves — which is a worse outcome than the one being avoided.
-Surviving a reload and not surviving the tab is the trade that avoids both.
+stored **nowhere**: it lives in component state and is written to no browser store.
 
-This is not encryption and not isolation. While the tab is open, any script on the origin can read
-`sessionStorage`. What it buys is that nothing is left on the machine afterwards.
+**`sessionStorage` was built for this value and then removed**, which is worth recording because it
+looks like the obvious answer. It is scoped to one tab and dropped when that tab closes, so it
+reads as a reasonable middle ground. It is not, against the threat that actually matters here. A
+`sessionStorage` entry is readable by any script running on the origin for as long as the tab is
+open — a compromised dependency, an injected script, anything else on the page — so it offers no
+protection against the thing most likely to go after a credential. What it does add is a window
+during which the value sits somewhere enumerable by key. Component state is not immune either, but
+it is not enumerable and it does not survive a reload.
+
+**The cost is real, and was accepted deliberately**: the secret is gone on reload, on navigating
+away, and on switching to another pill, since `App` mounts one workspace at a time. The note beside
+the field says so in as many words — the failure mode to avoid is someone discovering it by losing
+a value they had pasted and no longer have. Copy the output before leaving the page.
+
+`SECRET_KUBERNETES_KEYS` is **derived** from the field descriptors (`secret: true`) rather than
+written out a second time, so marking a new field secret is the only edit needed to bring it under
+this rule, and a test asserts the two lists never share a key.
 
 Three details of the rendered Secret are deliberate:
 
@@ -134,10 +144,9 @@ it buys nothing and suggests a protection that isn't there. What the `secret: tr
 manager, an autocorrect dictionary, a remote spell-checking service). If masking is wanted anyway,
 it is a one-line change in `FieldRow` — flagging the reasoning, not refusing the request.
 
-**Clear API secret** blanks the field and removes the `sessionStorage` key outright rather than
-writing an empty value over it — an emptied blob under a key named `secret:kubernetes` still tells
-a reader what used to be there. The removal lives in the persistence effect, not the button's
-handler, so emptying the field by hand behaves identically instead of only the button being safe.
+**Clear API secret** blanks the field and the rendered output. There is no storage for it to clear;
+it exists because the value is on screen until something removes it, and "I am about to share this
+screen" is the case it is for.
 
 What this does *not* cover: the clipboard. **Copy all** puts the whole rendered stream on the
 system clipboard, which is the point of the pill, and a secret filled into an input would be in

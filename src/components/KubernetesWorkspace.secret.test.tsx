@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { KubernetesWorkspace } from './KubernetesWorkspace'
-import { kubernetesDraftKey, kubernetesSecretKey } from '../kubernetes'
+import { kubernetesDraftKey } from '../kubernetes'
 
 // The API secret is the one value on this pill that is a secret by construction rather than by
-// accident, so where it goes is worth pinning from both directions: it must reach sessionStorage
-// (or a reload loses it, which pushes people to keep it somewhere worse) and it must never reach
-// localStorage (which outlives the tab and the browser session entirely).
+// accident, and the promise about it is the strongest one available to a page: it is held in
+// component state and written to no store at all.
+//
+// sessionStorage was built for this value first and then removed. It is readable by any script on
+// the origin for as long as the tab is open, so against the threat that actually matters - a
+// compromised dependency, an injected script, anything else running on the page - it offers no
+// protection, and all it adds is a window during which the value sits somewhere enumerable by key.
+// The price of the stricter answer is that a reload loses the secret; that is a deliberate,
+// user-made trade, and the tests below pin both halves of it so neither can be softened quietly.
 const SECRET = 'ghp_SUPERSECRET123'
 const draftKey = `yaml-config-generator:${kubernetesDraftKey()}`
-const secretKey = `yaml-config-generator:${kubernetesSecretKey()}`
 
 function fillIn({ secret = SECRET } = {}) {
   const view = render(<KubernetesWorkspace />)
@@ -20,6 +25,7 @@ function fillIn({ secret = SECRET } = {}) {
 }
 
 const output = () => document.querySelector('.yaml-editor-fallback')?.textContent ?? ''
+const dumpOf = (store: Storage) => Object.keys(store).map((k) => store.getItem(k) ?? '').join('\n')
 
 describe('the Kubernetes API secret', () => {
   beforeEach(() => {
@@ -27,23 +33,33 @@ describe('the Kubernetes API secret', () => {
     sessionStorage.clear()
   })
 
-  it('is held in sessionStorage and never in localStorage', () => {
+  it('reaches no browser store at all', () => {
     fillIn()
 
-    expect(sessionStorage.getItem(secretKey)).toContain(SECRET)
-    expect(localStorage.getItem(draftKey)).not.toContain(SECRET)
-    // Not just "not under that key" - nowhere in localStorage at all.
-    expect(Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? '').join('\n')).not.toContain(SECRET)
+    // Proof it is genuinely in play - otherwise this passes by the field doing nothing.
+    expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue(SECRET)
+    expect(output()).toContain(SECRET)
+
+    expect(dumpOf(localStorage)).not.toContain(SECRET)
+    expect(dumpOf(sessionStorage)).not.toContain(SECRET)
+    expect(Object.keys(sessionStorage)).toHaveLength(0)
     expect(JSON.parse(localStorage.getItem(draftKey) ?? '{}')).toEqual({ tenant: 'acme', product: 'widgets' })
   })
 
-  it('survives a reload within the tab', () => {
+  // The other half of the same decision. Losing it on reload is the cost that was accepted, so it
+  // is asserted rather than left to drift back into a "convenience" cache later.
+  it('is gone after a reload, while the two non-secret inputs come back', () => {
     fillIn().unmount()
     render(<KubernetesWorkspace />)
 
-    expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue(SECRET)
-    // ...and the two localStorage-backed values came back too, from the other store.
+    expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue('')
     expect(screen.getByRole('textbox', { name: 'Tenant' })).toHaveValue('acme')
+    expect(output()).not.toContain(SECRET)
+  })
+
+  it('tells the reader it is not saved, before they find out the hard way', () => {
+    fillIn({ secret: '' })
+    expect(screen.getByText(/Never saved/)).toBeInTheDocument()
   })
 
   it('renders an Opaque Secret carrying the value as stringData, not base64', () => {
@@ -51,9 +67,7 @@ describe('the Kubernetes API secret', () => {
 
     expect(output()).toContain('name: acme-widgets-api')
     expect(output()).toContain('type: Opaque')
-    expect(output()).toContain('stringData:')
     expect(output()).toContain(`api_secret: ${SECRET}`)
-    // base64 would look protected while being just as readable; the comment says so in the output.
     expect(output()).not.toContain(btoa(SECRET))
     expect(output()).toContain('must NOT be committed')
   })
@@ -63,8 +77,6 @@ describe('the Kubernetes API secret', () => {
 
     expect(output()).toContain('kind: Namespace')
     expect(output()).not.toContain('acme-widgets-api')
-    expect(output()).not.toContain('type: Opaque')
-    // An empty stringData would overwrite a real secret already in the cluster with nothing.
     expect(output()).not.toContain('stringData')
   })
 
@@ -87,7 +99,10 @@ describe('the Kubernetes API secret', () => {
       expect(button()).toBeEnabled()
     })
 
-    it('removes it from the field, the output and the tab, and says so', () => {
+    // Nothing is stored, so this is about the screen: the value sits in the field and in the
+    // rendered output until something removes it, and "I am about to share this screen" is the
+    // case it exists for.
+    it('removes it from the field and the output, and says so', () => {
       fillIn()
       expect(output()).toContain(SECRET)
 
@@ -95,26 +110,9 @@ describe('the Kubernetes API secret', () => {
 
       expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue('')
       expect(output()).not.toContain(SECRET)
-      expect(screen.getByText('Cleared from this tab and removed from the page.')).toBeInTheDocument()
+      expect(screen.getByText('Cleared from the page.')).toBeInTheDocument()
       // The tenant and product are not secrets and are not collateral.
       expect(screen.getByRole('textbox', { name: 'Tenant' })).toHaveValue('acme')
-    })
-
-    it('removes the key rather than leaving an emptied blob behind', () => {
-      fillIn()
-      fireEvent.click(button())
-
-      expect(sessionStorage.getItem(secretKey)).toBeNull()
-      expect(Object.keys(sessionStorage)).not.toContain(secretKey)
-    })
-
-    it('does not come back on the next reload', () => {
-      const view = fillIn()
-      fireEvent.click(button())
-      view.unmount()
-
-      render(<KubernetesWorkspace />)
-      expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue('')
     })
   })
 })

@@ -1,5 +1,5 @@
 import type { DraftStatus, FieldDescriptor } from '../configs/types'
-import { clearSessionState, readPersistedState, readSessionState } from '../lib/persisted-state'
+import { readPersistedState } from '../lib/persisted-state'
 import { renderManifests, type ManifestInput } from './manifests'
 
 // Not a *.schema.json config type: there's no file to push and no schema to validate against -
@@ -33,19 +33,27 @@ export const KUBERNETES_DEFINITION = {
 export const PERSISTED_KUBERNETES_KEYS = ['tenant', 'product'] as const
 export type PersistedKubernetesKey = (typeof PERSISTED_KUBERNETES_KEYS)[number]
 
-// The second tier: sessionStorage, which is scoped to one tab and dropped when that tab closes.
-// `apiSecret` is here rather than on the list above because losing it on every page refresh would
-// be worse than useless - it would push people to keep the value somewhere more permanent and less
-// careful, a note file or a chat message, which is the outcome this is trying to avoid. Surviving
-// a reload and not surviving the tab is the trade that buys that without leaving it on the machine.
-//
-// Three tiers, and the default is the strictest one: a key on neither list is held in memory only.
-export const SESSION_KUBERNETES_KEYS = ['apiSecret'] as const
-export type SessionKubernetesKey = (typeof SESSION_KUBERNETES_KEYS)[number]
+// Fields the descriptors themselves mark as secret, derived rather than listed a second time, so
+// adding `secret: true` to a field is the only edit needed to bring it under the rule below.
+export const SECRET_KUBERNETES_KEYS = KUBERNETES_FIELDS.filter(
+  (field) => field.type === 'text' && field.secret,
+).map((field) => field.key)
 
+// A secret is held in component state and nowhere else - not localStorage, and deliberately not
+// sessionStorage either. sessionStorage was built for exactly this value and then taken back out:
+// it is readable by any script on the origin for as long as the tab is open, so against the threat
+// that matters here (a compromised dependency, an injected script, anything else running on the
+// page) it offers no protection at all, and all it adds is a window during which the value is
+// sitting somewhere a script can enumerate. Component state is not immune either, but it is not
+// enumerable by key and it does not survive a reload.
+//
+// The cost is real and is the user's call, made explicitly: the secret is gone on reload, on
+// navigating away, and on switching to another pill, because App mounts one workspace at a time.
+// The UI says so next to the field rather than letting people discover it.
 export interface KubernetesDraft {
   tenant: string
   product: string
+  // Never persisted - see SECRET_KUBERNETES_KEYS above.
   apiSecret: string
   // Inputs added later live here too. They are held in memory and rendered like any other -
   // they are simply not part of what `persistedKubernetesDraft` hands to storage.
@@ -53,22 +61,9 @@ export interface KubernetesDraft {
 }
 
 export type PersistedKubernetesDraft = Pick<KubernetesDraft, PersistedKubernetesKey>
-export type SessionKubernetesDraft = Pick<KubernetesDraft, SessionKubernetesKey>
 
 export function emptyKubernetesDraft(): KubernetesDraft {
   return { tenant: '', product: '', apiSecret: '' }
-}
-
-export function emptySessionKubernetesDraft(): SessionKubernetesDraft {
-  return { apiSecret: '' }
-}
-
-// A separate storage key from the draft, not a field inside it. Two reasons: clearing the secret
-// is then a removeItem rather than a rewrite of a shared blob (nothing is left behind to read),
-// and the two live in different stores, so merging them into one record would mean writing half
-// of it to each and reassembling on read.
-export function kubernetesSecretKey(): string {
-  return `secret:${KUBERNETES_ID}`
 }
 
 export function kubernetesDraftKey(): string {
@@ -87,25 +82,8 @@ export function persistedKubernetesDraft(draft: Partial<Record<string, unknown>>
   return persisted
 }
 
-export function sessionKubernetesDraft(draft: Partial<Record<string, unknown>>): SessionKubernetesDraft {
-  const session = {} as SessionKubernetesDraft
-  for (const key of SESSION_KUBERNETES_KEYS) session[key] = String(draft[key] ?? '')
-  return session
-}
-
-export function readKubernetesSecrets(): SessionKubernetesDraft {
-  return sessionKubernetesDraft(
-    readSessionState<Partial<Record<string, unknown>>>(kubernetesSecretKey(), emptySessionKubernetesDraft),
-  )
-}
-
-export function clearKubernetesSecrets(): boolean {
-  return clearSessionState(kubernetesSecretKey())
-}
-
 // The pill dot deliberately ignores the secret: it is optional, so a namespace with no API secret
-// is a complete answer, and reading sessionStorage to badge a pill would make the dot mean
-// something different in a second tab.
+// is a complete answer - and there would be nothing to read anyway, since it is never stored.
 export function getKubernetesStatus(draft: ManifestInput = readKubernetesDraft()): DraftStatus {
   if (renderManifests(draft).success) return 'valid'
   return draft.tenant.trim() || draft.product.trim() ? 'draft' : 'empty'

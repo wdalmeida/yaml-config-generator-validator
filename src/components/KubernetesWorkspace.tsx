@@ -1,17 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { writePersistedState, writeSessionState } from '../lib/persisted-state'
+import { writePersistedState } from '../lib/persisted-state'
 import {
-  clearKubernetesSecrets,
   emptyKubernetesDraft,
   KUBERNETES_FIELDS,
   kubernetesDraftKey,
-  kubernetesSecretKey,
   persistedKubernetesDraft,
   readKubernetesDraft,
-  readKubernetesSecrets,
   renderManifests,
-  sessionKubernetesDraft,
-  SESSION_KUBERNETES_KEYS,
+  SECRET_KUBERNETES_KEYS,
   type KubernetesDraft,
 } from '../kubernetes'
 import { FieldRow } from './fields/FieldRow'
@@ -27,37 +23,29 @@ export function KubernetesWorkspace() {
   // default on the one pill whose inputs will eventually include a secret. Here the draft is
   // ordinary component state and the write is narrowed to the allow-list on the way out, so an
   // input that nobody has explicitly cleared for storage simply never reaches it.
+  // Only the persisted half is read back on mount. A secret starts blank every time by design -
+  // there is nowhere for it to have been kept.
   const [draft, setDraft] = useState<KubernetesDraft>(() => ({
     ...emptyKubernetesDraft(),
     ...readKubernetesDraft(),
-    ...readKubernetesSecrets(),
   }))
   const [copied, setCopied] = useState(false)
   const [cleared, setCleared] = useState(false)
 
-  // Two writes to two stores, each narrowed to its own list on the way out. Splitting them here
-  // rather than inside one helper keeps the destination visible at the call site: it should be
-  // hard to add a key to the wrong one without noticing which store you just chose.
+  // The one write, narrowed to the allow-list on the way out. A field not on that list - every
+  // secret field included - reaches no store at all.
   useEffect(() => {
     writePersistedState(kubernetesDraftKey(), persistedKubernetesDraft(draft))
   }, [draft])
 
-  useEffect(() => {
-    const session = sessionKubernetesDraft(draft)
-    // An empty record is still a record: a blob sitting under a key named `secret:kubernetes`
-    // tells a reader exactly what used to be there. So the last secret leaving removes the key
-    // outright - and doing it here rather than in the button's handler means emptying the field
-    // by hand behaves identically to pressing Clear, instead of only the button being safe.
-    if (Object.values(session).every((value) => value.trim() === '')) clearKubernetesSecrets()
-    else writeSessionState(kubernetesSecretKey(), session)
-  }, [draft])
+  const hasSecret = SECRET_KUBERNETES_KEYS.some((key) => (draft[key] ?? '').trim() !== '')
 
-  const hasSecret = SESSION_KUBERNETES_KEYS.some((key) => draft[key].trim() !== '')
-
+  // Still worth a button even though nothing is stored: the value is on screen and in the rendered
+  // output until something removes it, and "I am about to share this screen" is the common case.
   function clearSecrets() {
     setDraft((prev) => {
       const next = { ...prev }
-      for (const key of SESSION_KUBERNETES_KEYS) next[key] = ''
+      for (const key of SECRET_KUBERNETES_KEYS) next[key] = ''
       return next
     })
     setCleared(true)
@@ -95,9 +83,9 @@ export function KubernetesWorkspace() {
             <FieldRow field={field} value={draft[field.key] ?? ''} onChange={(value) => setField(field.key, value)} />
             {field.type === 'text' && field.secret && (
               <p className="card-note">
-                Kept in this tab only — it survives a reload, and the browser drops it when the tab
-                closes. It is never written to <code>localStorage</code> alongside the tenant and
-                product. Leave it blank to omit the Secret from the output.
+                <strong>Never saved.</strong> It is held on this page only — reloading, leaving, or
+                switching to another pill clears it and you will need to paste it again. Copy the
+                output before you go. Leave it blank to omit the Secret entirely.
               </p>
             )}
           </section>
@@ -108,9 +96,7 @@ export function KubernetesWorkspace() {
             Clear API secret
           </button>
           <p className="card-note" aria-live="polite">
-            {cleared
-              ? 'Cleared from this tab and removed from the page.'
-              : 'Removes it from the field, from the output, and from this tab’s storage.'}
+            {cleared ? 'Cleared from the page.' : 'Removes it from the field and from the output below.'}
           </p>
         </section>
 
