@@ -36,6 +36,19 @@ export interface ManifestInput {
 export const API_SECRET_KEY = 'api_secret'
 export const API_SECRET_SUFFIX = 'api'
 
+// What a masked secret is rendered as. Bullets rather than asterisks on purpose: `*` opens an
+// alias in YAML, so a run of them comes back quoted ("********") and reads as a value someone
+// meant to type. The length is fixed and says nothing about the real one - a mask that matches
+// the secret's length leaks the secret's length.
+export const MASKED_SECRET = '••••••••'
+
+export interface RenderOptions {
+  // Replaces every secret value with MASKED_SECRET. The manifests are otherwise identical, so the
+  // masked stream is still valid YAML - it just describes a Secret nobody should apply. Copying
+  // deliberately does not use this: see KubernetesWorkspace.
+  maskSecrets?: boolean
+}
+
 export type ManifestResult =
   | { success: true; namespace: string; yaml: string }
   | { success: false; issues: string[] }
@@ -61,7 +74,7 @@ function document(comment: string, resource: unknown): string {
   return `${comment}\n${YAML.stringify(resource)}`.trimEnd()
 }
 
-export function renderManifests(input: ManifestInput): ManifestResult {
+export function renderManifests(input: ManifestInput, options: RenderOptions = {}): ManifestResult {
   const tenant = input.tenant.trim()
   const product = input.product.trim()
 
@@ -152,7 +165,7 @@ export function renderManifests(input: ManifestInput): ManifestResult {
               kind: 'Secret',
               metadata: { name: apiSecretName, namespace },
               type: 'Opaque',
-              stringData: { [API_SECRET_KEY]: apiSecret },
+              stringData: { [API_SECRET_KEY]: options.maskSecrets ? MASKED_SECRET : apiSecret },
             },
           ),
         ]

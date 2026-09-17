@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { KubernetesWorkspace } from './KubernetesWorkspace'
-import { kubernetesDraftKey } from '../kubernetes'
+import { kubernetesDraftKey, MASKED_SECRET } from '../kubernetes'
 
 // The API secret is the one value on this pill that is a secret by construction rather than by
 // accident, and the promise about it is the strongest one available to a page: it is held in
@@ -20,10 +20,14 @@ function fillIn({ secret = SECRET } = {}) {
   const view = render(<KubernetesWorkspace />)
   fireEvent.change(screen.getByRole('textbox', { name: 'Tenant' }), { target: { value: 'acme' } })
   fireEvent.change(screen.getByRole('textbox', { name: 'Product' }), { target: { value: 'widgets' } })
-  if (secret) fireEvent.change(screen.getByRole('textbox', { name: 'API secret' }), { target: { value: secret } })
+  // getByLabelText, not getByRole('textbox'): the field is type="password" while masked, and a
+  // password input deliberately exposes no textbox role.
+  if (secret) fireEvent.change(secretInput(), { target: { value: secret } })
   return view
 }
 
+const secretInput = () => screen.getByLabelText('API secret')
+const reveal = () => screen.getByRole('button', { name: /(Show|Hide) secret/ })
 const output = () => document.querySelector('.yaml-editor-fallback')?.textContent ?? ''
 const dumpOf = (store: Storage) => Object.keys(store).map((k) => store.getItem(k) ?? '').join('\n')
 
@@ -37,7 +41,8 @@ describe('the Kubernetes API secret', () => {
     fillIn()
 
     // Proof it is genuinely in play - otherwise this passes by the field doing nothing.
-    expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue(SECRET)
+    expect(secretInput()).toHaveValue(SECRET)
+    fireEvent.click(reveal())
     expect(output()).toContain(SECRET)
 
     expect(dumpOf(localStorage)).not.toContain(SECRET)
@@ -56,7 +61,7 @@ describe('the Kubernetes API secret', () => {
     fillIn().unmount()
     render(<KubernetesWorkspace />)
 
-    expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue('')
+    expect(secretInput()).toHaveValue('')
     expect(screen.getByRole('textbox', { name: 'Tenant' })).toHaveValue('acme')
     expect(output()).not.toContain(SECRET)
   })
@@ -68,6 +73,7 @@ describe('the Kubernetes API secret', () => {
 
   it('renders an Opaque Secret carrying the value as stringData, not base64', () => {
     fillIn()
+    fireEvent.click(reveal())
 
     expect(output()).toContain('name: acme-widgets-api')
     expect(output()).toContain('type: Opaque')
@@ -86,8 +92,9 @@ describe('the Kubernetes API secret', () => {
 
   it('turns off autofill, spellcheck and autocorrect on the input', () => {
     fillIn({ secret: '' })
-    const input = screen.getByRole('textbox', { name: 'API secret' })
+    const input = secretInput()
 
+    expect(input).toHaveAttribute('type', 'password')
     expect(input).toHaveAttribute('autocomplete', 'off')
     expect(input).toHaveAttribute('autocorrect', 'off')
     expect(input).toHaveAttribute('spellcheck', 'false')
@@ -98,10 +105,11 @@ describe('the Kubernetes API secret', () => {
   describe('Clear secrets', () => {
     const button = () => screen.getByRole('button', { name: 'Clear secrets' })
 
+
     it('is disabled while there is nothing to clear', () => {
       fillIn({ secret: '' })
       expect(button()).toBeDisabled()
-      fireEvent.change(screen.getByRole('textbox', { name: 'API secret' }), { target: { value: SECRET } })
+      fireEvent.change(secretInput(), { target: { value: SECRET } })
       expect(button()).toBeEnabled()
     })
 
@@ -110,11 +118,12 @@ describe('the Kubernetes API secret', () => {
     // case it exists for.
     it('removes it from the field and the output, and says so', () => {
       fillIn()
+      fireEvent.click(reveal())
       expect(output()).toContain(SECRET)
 
       fireEvent.click(button())
 
-      expect(screen.getByRole('textbox', { name: 'API secret' })).toHaveValue('')
+      expect(secretInput()).toHaveValue('')
       expect(output()).not.toContain(SECRET)
       expect(screen.getByText('Cleared from the page.')).toBeInTheDocument()
       // The tenant and product are not secrets and are not collateral.
@@ -162,5 +171,74 @@ describe('the namespace field', () => {
       product: 'widgets',
       namespace: 'team-platform',
     })
+  })
+})
+
+// Masking the input is only worth anything if whatever renders the value masks it too - otherwise
+// it is theatre, hiding the value in one box while printing it in the panel alongside. So the one
+// toggle governs both, and the copy is deliberately exempt: putting `api_secret: ••••••••` on the
+// clipboard would create a Secret holding literal bullets, and that failure would surface far from
+// here, inside a cluster, as an application that cannot authenticate.
+describe('masking the secret', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('hides it in the field and the output by default', () => {
+    fillIn()
+
+    expect(secretInput()).toHaveAttribute('type', 'password')
+    expect(output()).not.toContain(SECRET)
+    expect(output()).toContain('api_secret: ••••••••')
+    expect(reveal()).toHaveTextContent('Show secret')
+  })
+
+  it('masks to a fixed length, so the mask does not leak the real one', () => {
+    fillIn({ secret: 'x' })
+    const short = output()
+    fireEvent.change(secretInput(), { target: { value: 'x'.repeat(120) } })
+
+    expect(short).toContain(MASKED_SECRET)
+    expect(output()).toContain(MASKED_SECRET)
+    expect(output()).toBe(short)
+  })
+
+  it('shows both once revealed, and hides both again', () => {
+    fillIn()
+    fireEvent.click(reveal())
+
+    expect(secretInput()).toHaveAttribute('type', 'text')
+    expect(output()).toContain(`api_secret: ${SECRET}`)
+    expect(reveal()).toHaveTextContent('Hide secret')
+
+    fireEvent.click(reveal())
+    expect(secretInput()).toHaveAttribute('type', 'password')
+    expect(output()).not.toContain(SECRET)
+  })
+
+  it('copies the real value while masked, and says that it did', async () => {
+    fillIn()
+    expect(output()).not.toContain(SECRET)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy all' }))
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining(`api_secret: ${SECRET}`))
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(expect.stringContaining(MASKED_SECRET))
+    expect(await screen.findByText(/including the real secret rather than the mask/)).toBeInTheDocument()
+  })
+
+  it('starts masked again on the next visit rather than remembering the choice', () => {
+    fillIn()
+    fireEvent.click(reveal())
+    expect(reveal()).toHaveTextContent('Hide secret')
+
+    render(<KubernetesWorkspace />)
+    expect(screen.getAllByRole('button', { name: 'Show secret' }).length).toBeGreaterThan(0)
+  })
+
+  it('offers nothing to reveal when there is no secret', () => {
+    fillIn({ secret: '' })
+    expect(reveal()).toBeDisabled()
+    expect(output()).not.toContain(MASKED_SECRET)
   })
 })

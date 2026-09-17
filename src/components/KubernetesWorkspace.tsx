@@ -32,6 +32,8 @@ export function KubernetesWorkspace() {
   }))
   const [copied, setCopied] = useState(false)
   const [cleared, setCleared] = useState(false)
+  // Masked by default, and not persisted: every visit starts hidden, which is the point.
+  const [revealed, setRevealed] = useState(false)
 
   // The one write, narrowed to the allow-list on the way out. A field not on that list - every
   // secret field included - reaches no store at all.
@@ -55,7 +57,7 @@ export function KubernetesWorkspace() {
     setCopied(false)
   }
 
-  const result = renderManifests(draft)
+  const result = renderManifests(draft, { maskSecrets: !revealed })
   // What the namespace would be with the override blank, shown so the default is visible rather
   // than something you discover by clearing the field.
   // Note the empty parts are spelled out rather than left blank: with both fields empty,
@@ -72,8 +74,13 @@ export function KubernetesWorkspace() {
   }
 
   function handleCopy() {
-    if (!result.success) return
-    void navigator.clipboard.writeText(result.yaml)
+    // Deliberately re-rendered unmasked. Copying the mask would put `api_secret: ••••••••` on the
+    // clipboard and create a Secret holding literal bullets - a failure that would surface far
+    // from here, inside a cluster, as an application that cannot authenticate. What you see is
+    // therefore not always what you copy, and the status line below says so when it applies.
+    const copyable = renderManifests(draft)
+    if (!copyable.success) return
+    void navigator.clipboard.writeText(copyable.yaml)
     setCopied(true)
   }
 
@@ -93,7 +100,12 @@ export function KubernetesWorkspace() {
 
         {KUBERNETES_FIELDS.map((field) => (
           <section className="card-flat" key={field.key}>
-            <FieldRow field={field} value={draft[field.key] ?? ''} onChange={(value) => setField(field.key, value)} />
+            <FieldRow
+              field={field}
+              value={draft[field.key] ?? ''}
+              revealSecret={revealed}
+              onChange={(value) => setField(field.key, value)}
+            />
             {field.key === 'namespace' && (
               <p className="card-note">
                 Optional. Blank uses <code>{derivedNamespace}</code>. Give one to match a cluster
@@ -101,11 +113,21 @@ export function KubernetesWorkspace() {
               </p>
             )}
             {field.type === 'text' && field.secret && (
-              <p className="card-note">
-                <strong>Never saved.</strong> It is held on this page only — reloading, leaving, or
-                switching to another pill clears it and you will need to paste it again. Copy the
-                output before you go. Leave it blank to omit the Secret entirely.
-              </p>
+              <>
+                <p className="card-note">
+                  <strong>Never saved.</strong> It is held on this page only — reloading, leaving,
+                  or switching to another pill clears it and you will need to paste it again. Copy
+                  the output before you go. Leave it blank to omit the Secret entirely.
+                </p>
+                <button type="button" disabled={!hasSecret} onClick={() => setRevealed((on) => !on)}>
+                  {revealed ? 'Hide secret' : 'Show secret'}
+                </button>
+                <p className="card-note">
+                  {revealed
+                    ? 'Shown here and in the output. Hide it before sharing your screen.'
+                    : 'Hidden here and in the output. Copy all still copies the real value, not the mask.'}
+                </p>
+              </>
             )}
           </section>
         ))}
@@ -172,7 +194,14 @@ export function KubernetesWorkspace() {
 
           <div className="yaml-status" aria-live="polite">
             {result.success ? (
-              <p className="success">✓ {copied ? 'Copied — apply with kubectl apply -f -' : 'Rendered'}</p>
+              <p className="success">
+                ✓{' '}
+                {copied
+                  ? hasSecret && !revealed
+                    ? 'Copied, including the real secret rather than the mask — apply with kubectl apply -f -'
+                    : 'Copied — apply with kubectl apply -f -'
+                  : 'Rendered'}
+              </p>
             ) : (
               <ul className="errors">
                 {result.issues.map((issue, i) => (

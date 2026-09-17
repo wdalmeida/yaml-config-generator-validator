@@ -13,9 +13,12 @@ interface FieldRowProps {
   // Names the row this field belongs to, for the same reason. Inside "GitHub topics" the third
   // row's name field is "name" three times over otherwise; this makes it "name, topic 3".
   rowLabel?: string
+  // Shows a `secret: true` field's value in the clear. Default false, so a secret field is masked
+  // unless something deliberately asks otherwise - the safe direction for a default to point.
+  revealSecret?: boolean
 }
 
-export function FieldRow({ field, value, onChange, compact = false, rowLabel }: FieldRowProps) {
+export function FieldRow({ field, value, onChange, compact = false, rowLabel, revealSecret = false }: FieldRowProps) {
   // One id per mounted field, so <label for> points at this instance and not at the same-named
   // field in the row above. useId is stable across server/client and across re-renders.
   const id = useId()
@@ -30,8 +33,16 @@ export function FieldRow({ field, value, onChange, compact = false, rowLabel }: 
           value={(value as string | undefined) ?? ''}
           placeholder={field.placeholder ?? field.label}
           // A secret is not ordinary text: autofill would offer to store it, and spellcheck and
-          // autocorrect both hand what you type to machinery you did not choose.
-          {...(field.secret ? { autoComplete: 'off', autoCorrect: 'off', spellCheck: false } : {})}
+          // autocorrect both hand what you type to machinery you did not choose. Masking is only
+          // worth anything if whatever renders the value masks it too - here the YAML panel does.
+          {...(field.secret
+            ? {
+                type: revealSecret ? 'text' : 'password',
+                autoComplete: 'off',
+                autoCorrect: 'off',
+                spellCheck: false,
+              }
+            : {})}
           onChange={(e) => onChange(e.target.value)}
         />
       )
