@@ -98,4 +98,11 @@ export function readKubernetesDraft(): PersistedKubernetesDraft {
   )
 }
 
-export { renderManifests, namespaceFor, type ManifestInput, type ManifestResult } from './manifests'
+export {
+  renderManifests,
+  namespaceFor,
+  MASKED_SECRET,
+  type ManifestInput,
+  type ManifestResult,
+  type RenderOptions,
+} from './manifests'

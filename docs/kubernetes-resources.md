@@ -135,14 +135,29 @@ Three details of the rendered Secret are deliberate:
   to be committed to a repository. This one is the exception, and the warning has to survive the
   copy/paste into a terminal, so it lives in the YAML rather than only in the UI.
 
-**The input is not masked, on purpose.** A `type="password"` box would be theatre here: the value
-is rendered in plain text in the output panel a few hundred pixels to the right, because producing
-that manifest is the entire point of the field. Masking the input while printing the value beside
-it buys nothing and suggests a protection that isn't there. What the `secret: true` flag on the
-`FieldDescriptor` does instead is real — `autocomplete="off"`, `autocorrect="off"` and
-`spellcheck="false"`, each of which otherwise hands the value to machinery nobody chose (a password
-manager, an autocorrect dictionary, a remote spell-checking service). If masking is wanted anyway,
-it is a one-line change in `FieldRow` — flagging the reasoning, not refusing the request.
+**The secret is masked, in both places at once.** The field is a `type="password"` box and the
+rendered manifest shows `api_secret: ••••••••`, governed by one **Show secret** / **Hide secret**
+button. Masking only the input would have been theatre — the value is rendered a few hundred pixels
+to the right, because producing that manifest is the point of the field — so the toggle covers the
+panel too or it covers nothing. It starts masked on every visit and the choice is not remembered.
+
+Bullets rather than asterisks: `*` opens an alias in YAML, so a run of them comes back quoted
+(`"********"`) and reads like a value somebody meant to type. The mask is a **fixed length**
+regardless of the real one, because a mask that matches the secret's length leaks the secret's
+length.
+
+**Copying is deliberately exempt.** `Copy all` re-renders unmasked and puts the real value on the
+clipboard even while the panel shows bullets. The alternative is worse than it looks: copying the
+mask would create a Secret holding literal bullets, and that failure surfaces far from this page,
+inside a cluster, as an application that cannot authenticate. So what you see is not always what
+you copy — which is a genuine trap, and the reason the panel says so above the output and the
+status line says so again after the copy.
+
+The `secret: true` flag on the `FieldDescriptor` also turns off `autocomplete`, `autocorrect` and
+`spellcheck`, each of which otherwise hands the value to machinery nobody chose (a password
+manager, an autocorrect dictionary, a remote spell-checking service). `FieldRow`'s `revealSecret`
+prop defaults to `false`, so a secret field added anywhere else is masked unless something
+deliberately asks otherwise.
 
 **Clear secrets** blanks every field marked `secret: true` and the rendered output. It is named for
 the category rather than for today's single field, so a second secret input is covered without the
