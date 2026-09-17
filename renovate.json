@@ -10,9 +10,10 @@
   "configMigration": true,
   "osvVulnerabilityAlerts": true,
   "lockFileMaintenance": {
-    "description": "config:recommended does not enable this by default - without it, a transitive/indirect package-lock.json entry (not a direct package.json dependency) only ever gets refreshed as a side effect of some direct dependency's own bump, so a patched sub-dependency could sit unpicked-up indefinitely. This regenerates the whole lockfile within the existing semver ranges on the same weekly schedule as everything else, in its own single PR.",
+    "description": "config:recommended does not enable this by default - without it, a transitive/indirect package-lock.json entry (not a direct package.json dependency) only ever gets refreshed as a side effect of some direct dependency's own bump, so a patched sub-dependency could sit unpicked-up indefinitely. This regenerates the whole lockfile within the existing semver ranges on the same weekly schedule as everything else, in its own single PR. minimumReleaseAge is explicitly unset here, overriding the 7-day global above: lock file maintenance cannot validate release age, because npm - not Renovate - decides which versions the regenerated lockfile lands on, so there is nothing for Renovate to age-check. Inheriting the global left renovate/stability-days pending forever (\"Updates have not met minimum release age requirement\") on a PR that was otherwise green, and the weekly regeneration restarted the clock before it could ever elapse - PR #19 sat unmergeable for three weeks that way.",
     "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "schedule": ["before 6am on monday"],
+    "minimumReleaseAge": null
   },
   "customManagers": [
     {
