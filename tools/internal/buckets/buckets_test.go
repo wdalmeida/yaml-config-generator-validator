@@ -55,9 +55,15 @@ func TestGoldenParity(t *testing.T) {
 	}
 }
 
+// parityNames is the bucket set scripts/changed-buckets.sh had when bucket-golden.tsv was
+// captured. Parity is asserted against exactly these: a bucket added later (like "go") is new
+// behaviour with its own tests, not a regression against the bash, and folding it in here would
+// invalidate every golden row for no reason.
+var parityNames = []string{"app", "schemas", "markdown", "links", "deps", "charts", "workflows"}
+
 func format(result Result) string {
-	parts := make([]string, 0, len(Names))
-	for _, name := range Names {
+	parts := make([]string, 0, len(parityNames))
+	for _, name := range parityNames {
 		value := "false"
 		if result.Values[name] {
 			value = "true"
@@ -331,4 +337,37 @@ func TestExecGitOnARealMergeRef(t *testing.T) {
 
 	result, _ := For("pull_request", execGit)
 	on(t, result, "links")
+}
+
+// TestGoBucketNamesItsOwnInputs guards the "go" bucket added alongside the tools/ module. It is
+// currently unreachable on its own - everythingPattern matches tools/, go.mod and go.sum, so any
+// change to them forces every bucket true before the per-bucket patterns are consulted. That is
+// exactly why it is worth pinning: if tools/ is ever narrowed out of everythingPattern, the go
+// job must still run for a change to the module, and this test fails if the pattern stops
+// matching rather than letting the job quietly never run again.
+func TestGoBucketNamesItsOwnInputs(t *testing.T) {
+	for _, path := range []string{
+		"tools/cmd/scan-gate/main.go",
+		"tools/internal/buckets/buckets.go",
+		"go.mod",
+		"go.sum",
+	} {
+		t.Run(path, func(t *testing.T) {
+			if !patterns["go"].MatchString(path) {
+				t.Errorf("the go bucket pattern does not match %q", path)
+			}
+			// It must also still force everything on, which is the behaviour in force today.
+			if got := Classify([]string{path}); got.Reason == "" {
+				t.Errorf("%q no longer forces every bucket on (reason empty)", path)
+			}
+		})
+	}
+
+	for _, path := range []string{"src/App.tsx", "README.md", "charts/x/values.yaml"} {
+		t.Run("not "+path, func(t *testing.T) {
+			if patterns["go"].MatchString(path) {
+				t.Errorf("the go bucket pattern should not match %q", path)
+			}
+		})
+	}
 }

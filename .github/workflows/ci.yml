@@ -32,6 +32,7 @@ jobs:
       deps: ${{ steps.buckets.outputs.deps }}
       charts: ${{ steps.buckets.outputs.charts }}
       workflows: ${{ steps.buckets.outputs.workflows }}
+      go: ${{ steps.buckets.outputs.go }}
     steps:
       # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
       # available, which is what the classifier diffs. Do NOT add a `ref:` here: it would
@@ -48,6 +49,8 @@ jobs:
         run: go run ./tools/cmd/changed-buckets
 
   test:
+    needs: changes
+    if: needs.changes.outputs.app == 'true' # the app sources, its build/lint config, or the npm tree
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -98,6 +101,8 @@ jobs:
   # No `npm ci` here any more: this check used to need ajv, and now needs nothing but the Go
   # module and the JSON files it reads.
   schemas:
+    needs: changes
+    if: needs.changes.outputs.schemas == 'true' # the schema/onboarding JSON, or the npm tree
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -121,6 +126,8 @@ jobs:
   # tools/internal/buckets - so this job needs a bucket of its own only if it should skip on a
   # src/-only change.
   go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true' # the Go module itself
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -159,6 +166,8 @@ jobs:
   # templates (Ingress, HPA, PDB, NetworkPolicy) are off by default, so without those a
   # template that only breaks when they are enabled would reach main untested.
   helm:
+    needs: changes
+    if: needs.changes.outputs.charts == 'true' # the chart or its kube-linter config
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -340,6 +349,8 @@ jobs:
         run: exit 1
 
   markdown:
+    needs: changes
+    if: needs.changes.outputs.markdown == 'true' # a *.md file or markdownlint config
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -384,6 +395,8 @@ jobs:
   # time rather than by the commit. Its bucket is wider than markdown's for exactly this reason:
   # docs link out to charts/, tools/ and LICENSE.
   links:
+    needs: changes
+    if: needs.changes.outputs.links == 'true' # a *.md file, or a non-markdown file the docs link to
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -404,6 +417,8 @@ jobs:
       - run: go run ./tools/cmd/check-markdown-links
 
   audit:
+    needs: changes
+    if: needs.changes.outputs.deps == 'true' # package.json / package-lock.json
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -419,6 +434,8 @@ jobs:
       - run: npm audit --audit-level=high --package-lock-only
 
   actionlint:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true' # a workflow file
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -493,6 +510,8 @@ jobs:
         run: exit 1
 
   zizmor:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true' # a workflow file
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -547,6 +566,8 @@ jobs:
 
 
   plumber:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true' # a workflow file
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
