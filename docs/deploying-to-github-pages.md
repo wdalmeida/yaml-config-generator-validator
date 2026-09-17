@@ -8,7 +8,10 @@ already set up for the easiest option below — you only need one manual step in
 **Already in this repo:**
 
 - `.github/workflows/deploy.yml` — builds the app and publishes `dist/` on every push to `main`
-  (and on manual trigger).
+  that changes something the build can actually read (a `paths-ignore:` filter skips prose,
+  `charts/`, the container files and the lint config, since Pages publishes `dist/` and nothing
+  else), and on manual trigger. **`workflow_dispatch` is deliberately unfiltered** — if you ever
+  need to force a redeploy of an unchanged build, run the workflow by hand from the Actions tab.
 - `vite.config.ts` has `base: './'` — this makes every built asset path relative
   (`./assets/...` instead of `/assets/...`), so the site works at whatever subpath GitHub Pages
   serves it from (`https://<user>.github.io/<repo>/`) without hardcoding the repo name anywhere.

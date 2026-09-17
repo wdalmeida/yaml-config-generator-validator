@@ -1,8 +1,28 @@
 name: Deploy to GitHub Pages
 
+# Pages publishes `dist/` and nothing else, so anything `vite build` cannot read is filtered
+# out. Only one copy of the list is needed (there is no pull_request trigger), and
+# workflow_dispatch stays unfiltered as the manual escape hatch - see
+# docs/deploying-to-github-pages.md.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+      - 'charts/**'
+      - 'container/**'
+      - 'Containerfile*'
+      - '.containerignore'
+      - '.devcontainer/**'
+      - 'scripts/**'
+      - '.trivyignore.yaml'
+      - 'osv-scanner.toml'
+      - '.kube-linter.yaml'
+      - 'justfile'
+      - 'Brewfile'
+      - 'renovate.json'
   workflow_dispatch:
 
 permissions: {}
@@ -25,7 +45,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run build
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

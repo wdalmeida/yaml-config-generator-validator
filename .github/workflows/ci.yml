@@ -13,6 +13,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Works out which categories of file a PR touched, so the jobs below can skip what a change
+  # cannot possibly affect. Deliberately gates `pull_request` ONLY - every other event (push to
+  # main, the crons, a manual run) gets all-true from the script, so a mis-defined pattern is
+  # caught after the merge rather than never. See scripts/changed-buckets.sh, which also
+  # explains why any .github/** change forces every bucket on.
+  #
+  # ci-ok below has this job in its `needs:`, so a failure here goes red rather than silently
+  # skipping every job it gates.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.buckets.outputs.app }}
+      schemas: ${{ steps.buckets.outputs.schemas }}
+      markdown: ${{ steps.buckets.outputs.markdown }}
+      links: ${{ steps.buckets.outputs.links }}
+      deps: ${{ steps.buckets.outputs.deps }}
+      charts: ${{ steps.buckets.outputs.charts }}
+      workflows: ${{ steps.buckets.outputs.workflows }}
+    steps:
+      # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
+      # available, which is what the script diffs. Do NOT add a `ref:` here: it would replace
+      # the merge commit with the PR head and silently change what HEAD^1 means.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: buckets
+        run: ./scripts/changed-buckets.sh
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -28,7 +58,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
       - run: npm run lint:size
@@ -72,7 +102,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run lint:schemas
 
   # Renders the Helm chart and checks every manifest it produces against the real Kubernetes
@@ -280,7 +310,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       # lint:md always writes markdownlint-results.sarif too (see .markdownlint-cli2.jsonc's
       # outputFormatters) - upload it for code scanning even if this step fails the job.
       - name: markdownlint
@@ -302,6 +332,25 @@ jobs:
       - name: Fail if markdownlint found issues
         if: steps.markdownlint.outcome == 'failure'
         run: exit 1
+
+  # Relative links only - `.markdown-link-check.json` ignores http(s), so this is a filesystem
+  # check: instant, offline, and with no false positives to learn to ignore. It is also the only
+  # half of link checking a pull request can actually break, by moving a file something links to.
+  # External URLs are checked weekly by link-check.yml instead, because link rot is driven by
+  # time rather than by the commit. Its bucket is wider than markdown's for exactly this reason:
+  # docs link out to charts/, scripts/ and LICENSE.
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run lint:links
 
   audit:
@@ -314,9 +363,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm audit --audit-level=high
+      # No `npm ci`: `npm audit` resolves the tree from the lockfile, so installing it first
+      # bought nothing but a minute. --package-lock-only says that out loud rather than relying
+      # on how npm happens to behave with no node_modules present.
+      - run: npm audit --audit-level=high --package-lock-only
 
   actionlint:
     runs-on: ubuntu-latest
@@ -328,6 +378,15 @@ jobs:
       - run: |
           bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12 # script SHA pinned to this same tag
           ./actionlint -color
+      # actionlint has nothing to say about ci-ok's needs: list, and that list is now the only
+      # thing standing between a new job and being enforced by nothing. Lives here rather than
+      # in its own job because it is a workflow-YAML lint by any other name.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run lint:ci-gate
         # No native SARIF output from actionlint itself (only a Go-template `-format`); findings
         # already surface as a failing check + readable log, which is sufficient here.
 
@@ -460,3 +519,52 @@ jobs:
       # Sigstore/SLSA attestation before running, and handles its own SARIF/artifact upload
       # internally.
       - uses: getplumber/plumber@7cc2c2fe18af5a9f55e28528b8fba0fecee3be79 # v0.4.56
+
+  # The single required status check for `main`, and the reason every job above can be skipped
+  # safely. It always runs, so it always reports a real success or failure - nothing here relies
+  # on GitHub's "a skipped job satisfies a required check" behaviour, and a workflow-level
+  # `paths:` filter (which would leave a required check Pending forever, blocking the merge) is
+  # never needed on this file.
+  #
+  # Two properties follow from listing every job in `needs:` rather than naming contexts in the
+  # repository ruleset:
+  #   - a new job is enforced the moment it lands here, with no repo-settings change. The
+  #     previous per-context list had already drifted: `helm` and `plumber` were enforced by
+  #     nothing at all.
+  #   - Renovate's automerge waits on this one check, so it transitively waits on all of them.
+  #
+  # `skipped` is a pass - that is the whole point. Same shape as supply-chain.yml's sca-result,
+  # except that one treats skipped as a failure because there a skipped OSV pass means the scan
+  # genuinely did not happen.
+  ci-ok:
+    if: always()
+    needs:
+      - changes
+      - test
+      - schemas
+      - helm
+      - markdown
+      - links
+      - audit
+      - actionlint
+      - gitleaks
+      - zizmor
+      - plumber
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEEDS"
+          bad="$(printf '%s' "$NEEDS" | jq -r 'to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled")
+            | "\(.key) (\(.value.result))"')"
+          if [ -n "$bad" ]; then
+            echo "::error::CI failed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All jobs succeeded or were skipped."

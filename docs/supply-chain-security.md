@@ -127,7 +127,9 @@ now scores this repo 100/100.
 
 ## The release artifact gets its own attestation
 
-`supply-chain.yml`'s `sbom` job attests a `dist/` build on every ordinary push to `main` - but
+`supply-chain.yml`'s `sbom` job attests a `dist/` build on every ordinary push to `main` that
+touches something other than prose (a `paths-ignore:` filter skips `docs/**`, `**/*.md` and
+`LICENSE`; a weekly cron covers the time-dependent findings regardless) - but
 that's *not* the file anyone downloads. `release.yml`'s `build-and-attach` job does an
 independent build against the actual release tag, zips it to `dist.zip`, and attaches that to
 the GitHub Release. Since v-next, `build-and-attach` generates its own SBOM (same Syft flags as
@@ -422,7 +424,13 @@ grouping rules above rather than replacing them:
 
 Automerge uses GitHub's own native auto-merge (`platformAutomerge`, Renovate's default) rather
 than Renovate polling and merging itself - it still waits for every required status check, and
-respects the same branch protection every other PR does. This needed the repo's **"Allow
+respects the same branch protection every other PR does. Since `ci-ok` became the single
+required context (see `docs/releasing.md`), that one check transitively covers every job in
+`ci.yml` - including `helm` and `plumber`, which the previous per-job context list had quietly
+stopped enforcing. Note the interaction with per-PR job gating: any change under `.github/**`
+forces every bucket on, so a workflow tool-version bump - which touches only `ci.yml` - still
+runs the very jobs cited above as the reason it is safe to automerge. That rule exists for this
+reason; removing it would let those PRs automerge unexercised. This needed the repo's **"Allow
 auto-merge" setting turned on** (`gh api repos/<owner>/<repo> -X PATCH -f allow_auto_merge=true`
 or Settings → General → Pull Requests) - it was off by default and this is the one repo-level
 setting change this file's history required outside of `renovate.json` itself.

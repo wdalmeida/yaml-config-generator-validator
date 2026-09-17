@@ -157,7 +157,15 @@ sync.
 
 ## What CI does with it
 
-`.github/workflows/container.yml` runs on every push to `main` and every PR. Nothing
+`.github/workflows/container.yml` runs on every push to `main` and every PR **that touches a
+file able to change either image** - a `paths-ignore:` filter skips prose, `charts/`, and the
+lint/release config. So a docs-only merge to `main` publishes no new image: `sha-<short7>` will
+not exist for that commit and `:latest` keeps pointing at the previous one, whose bytes are
+identical anyway. Nothing in this repo resolves `sha-*` tags. The weekly cron is unaffected by
+path filters, which is what keeps the dated acceptances below honest regardless. `.devcontainer/**`
+is deliberately *not* filtered out - the `hadolint` job is the only check that file has ever
+had. None of this workflow's checks are required for merge, and they cannot become required
+while these filters exist (see `docs/releasing.md`). Nothing
 about the site's own delivery depends on it — the app ships via
 [GitHub Pages](deploying-to-github-pages.md) — but without it the container path would
 rot silently.

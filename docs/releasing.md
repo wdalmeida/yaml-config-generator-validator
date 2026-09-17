@@ -75,10 +75,54 @@ from a public reference table.)
 A second ruleset ("Require PR and passing checks on main") targets `refs/heads/main` with the
 `pull_request` rule (a PR is required to merge; `required_approving_review_count: 0` since this
 is a solo-maintained repo - approvals can be added later if collaborators join),
-`required_status_checks` (every job in `ci.yml`, including `zizmor` below), `deletion`, and
+`required_status_checks` (exactly one context, `ci-ok` - see below), `deletion`, and
 `non_fast_forward` (blocks force-push) rules active. Same admin bypass as the tag ruleset -
 the repo owner can still push directly or merge without a green check if genuinely needed, but
 nobody/nothing else can.
+
+### Why one required context and not a list of jobs
+
+`ci-ok` is a job in `ci.yml` that `needs:` every other job in the file, runs `if: always()`,
+and fails unless each of them reports success **or skipped**. Requiring it - and nothing else -
+buys two things:
+
+- **`ci.yml`'s jobs can be skipped safely.** Each job is gated on whether a PR actually touched
+  files it cares about (`scripts/changed-buckets.sh`), so a docs-only PR skips the build. The
+  alternative - a workflow-level `paths:` filter - is a trap here: a workflow skipped by a path
+  filter never creates its check runs at all, so a required check would sit *Pending* forever
+  and the PR could never merge. Gating inside the workflow, behind a gate job that always runs,
+  is what makes skipping safe. Nothing relies on GitHub's "a skipped job satisfies a required
+  check" behaviour.
+- **The list stops drifting.** It already had: this ruleset named `test`, `schemas`, `markdown`,
+  `audit`, `actionlint`, `gitleaks` and `zizmor`, while the `helm` and `plumber` jobs added later
+  were enforced by nothing at all, despite this file claiming "every job in `ci.yml`". A new job
+  is now covered the moment it lands in `ci-ok`'s `needs:`, with no repo-settings change - and
+  `npm run lint:ci-gate` (run by the `actionlint` job) fails the build if one is missing from it.
+
+The consequence worth knowing: **no other workflow's checks may be made required while it has a
+`paths-ignore:` filter.** `container.yml`, `codeql.yml` and `supply-chain.yml` all have one, so
+each would sit Pending on any PR it filtered out. Making them required means first giving them
+the same in-workflow gating `ci.yml` uses.
+
+To update the contexts - note that `PUT` replaces the **whole** ruleset, so the rules array has
+to be rewritten in place rather than sent on its own, or the `pull_request`, `deletion` and
+`non_fast_forward` rules above are silently dropped:
+
+```sh
+id=$(gh api repos/:owner/:repo/rulesets --jq \
+  '.[] | select(.name == "Require PR and passing checks on main") | .id')
+
+gh api "repos/:owner/:repo/rulesets/$id" --jq '{name, target, enforcement, bypass_actors,
+  conditions, rules}' |
+  jq '(.rules[] | select(.type == "required_status_checks")
+       | .parameters.required_status_checks) = [{context: "ci-ok"}]' |
+  gh api "repos/:owner/:repo/rulesets/$id" -X PUT --input -
+
+# Confirm: should print exactly one line, `ci-ok`.
+gh api "repos/:owner/:repo/rulesets/$id" --jq '.rules[]
+  | select(.type == "required_status_checks")
+  | .parameters.required_status_checks[].context'
+```
 
 ## Why `can_approve_pull_request_reviews` stays on repo-wide
 
