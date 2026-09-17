@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from './App'
 import { NAV_ENTRIES } from './nav'
 
@@ -89,8 +89,15 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Seed config drafts' }))
 
     fireEvent.click(pill('Kubernetes'))
-    // The real (unmocked) lazy YamlEditor renders here, so read the rendered document text.
-    expect(await screen.findByText(/globex-gadgets/)).toBeInTheDocument()
+    // The real (unmocked) lazy YamlEditor renders here, so wait for it before reading. Assert on
+    // the manifest stream specifically rather than on "somewhere on the page": the derived
+    // namespace is also shown in the form's own hints, so a page-wide text query now matches
+    // several elements and would pass without the manifests being named at all.
+    // ...and wait on the panel rather than on a query, since the lazy editor may still be the
+    // Suspense textarea when the hints have already rendered.
+    await waitFor(() =>
+      expect(document.querySelector('.yaml-panel')?.textContent ?? '').toContain('name: globex-gadgets'),
+    )
   })
 
   it('a step’s Kubernetes action switches to that pill', () => {

@@ -144,9 +144,32 @@ it buys nothing and suggests a protection that isn't there. What the `secret: tr
 manager, an autocorrect dictionary, a remote spell-checking service). If masking is wanted anyway,
 it is a one-line change in `FieldRow` — flagging the reasoning, not refusing the request.
 
-**Clear API secret** blanks the field and the rendered output. There is no storage for it to clear;
-it exists because the value is on screen until something removes it, and "I am about to share this
-screen" is the case it is for.
+**Clear secrets** blanks every field marked `secret: true` and the rendered output. It is named for
+the category rather than for today's single field, so a second secret input is covered without the
+label quietly becoming a lie. There is no storage for it to clear; it exists because the value is on
+screen until something removes it, and "I am about to share this screen" is the case it is for.
+
+## Naming the namespace
+
+The namespace is `<tenant>-<product>` unless the **Namespace** field is filled in, in which case
+that name is used verbatim. Every other object is named from the namespace, so an override moves
+all of them — the ServiceAccounts, their token Secrets, the Role, the RoleBinding and the API
+Secret — rather than relabelling one object and leaving the rest pointing at the old name.
+
+Three things about it:
+
+- **Tenant and product are still required.** They are the identity, not just raw material for a
+  name: they label the Namespace object, they are what the onboarding checklist seeds, and the
+  override renames the namespace rather than replacing what it stands for.
+- **A typed namespace gets the same DNS-1123 check as a derived one.** It is free text on the way
+  in exactly like the tenant is, and being specific about a name is not evidence that it is legal.
+- **It is on the storage allow-list.** A namespace is a name, not a secret. Adding it there was a
+  deliberate edit that failed `src/kubernetes/index.test.ts` first, which is the mechanism working:
+  the pinned list is what makes "is this a secret?" a question somebody has to answer.
+
+The form shows the derived value live, spelled `<tenant>-<product>` while those are empty — with
+both blank the derivation is literally `-`, which shown on its own reads as a bug rather than as a
+template.
 
 What this does *not* cover: the clipboard. **Copy all** puts the whole rendered stream on the
 system clipboard, which is the point of the pill, and a secret filled into an input would be in

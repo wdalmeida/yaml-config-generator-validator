@@ -141,3 +141,63 @@ describe('the API secret document', () => {
     expect(result.issues.join(' ')).toContain('API Secret')
   })
 })
+
+describe('the namespace override', () => {
+  const base = { tenant: 'acme', product: 'widgets' }
+
+  it('derives <tenant>-<product> when blank, absent or whitespace', () => {
+    for (const namespace of [undefined, '', '   ']) {
+      expect(namespaceFor({ ...base, namespace })).toBe('acme-widgets')
+    }
+  })
+
+  it('uses the given name verbatim when there is one', () => {
+    expect(namespaceFor({ ...base, namespace: '  team-platform  ' })).toBe('team-platform')
+  })
+
+  // The point of the override: every other name is derived from the namespace, so overriding it
+  // has to move all of them rather than just relabelling the Namespace object.
+  it('renames every derived object, not only the namespace', () => {
+    const result = renderManifests({ ...base, namespace: 'team-platform', apiSecret: 's3cret' })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    for (const name of [
+      'name: team-platform',
+      'name: team-platform-deployer',
+      'name: team-platform-reader-token',
+      'name: team-platform-role',
+      'name: team-platform-rolebinding',
+      'name: team-platform-api',
+    ]) {
+      expect(result.yaml).toContain(name)
+    }
+    expect(result.yaml).not.toContain('acme-widgets-')
+  })
+
+  // Tenant and product are the identity and still label the object; the override only renames it.
+  it('keeps labelling the Namespace with the tenant and product', () => {
+    const result = renderManifests({ ...base, namespace: 'team-platform' })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.yaml).toContain('tenant: acme')
+    expect(result.yaml).toContain('product: widgets')
+  })
+
+  it('still requires a tenant and a product', () => {
+    const result = renderManifests({ tenant: '', product: '', namespace: 'team-platform' })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.issues[0]).toContain('Enter a tenant and a product')
+  })
+
+  // A typed namespace is free text on the way in, exactly like the tenant, so it gets the same
+  // check rather than being trusted because the user was specific about it.
+  it('validates a given name as a DNS-1123 label', () => {
+    const result = renderManifests({ ...base, namespace: 'Team_Platform' })
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.issues.join(' ')).toContain('Namespace "Team_Platform"')
+  })
+})

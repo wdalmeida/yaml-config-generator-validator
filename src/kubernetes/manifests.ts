@@ -23,6 +23,12 @@ export interface ManifestInput {
   // because applying `stringData: {api_secret: ""}` would happily overwrite a real secret that is
   // already in the cluster with nothing. An omitted document cannot do that.
   apiSecret?: string
+  // Overrides the derived `<tenant>-<product>` name. Optional, and blank means derived - a cluster
+  // whose namespaces are already named by some other convention should not have to rename them to
+  // use this page, and a tenant/product pair that happens to produce a taken name needs a way out.
+  // Tenant and product stay required either way: they are the identity, and they still label the
+  // Namespace object. This only renames it.
+  namespace?: string
 }
 
 // The key inside the Secret's data, and the suffix of its name. Named separately because they are
@@ -34,8 +40,8 @@ export type ManifestResult =
   | { success: true; namespace: string; yaml: string }
   | { success: false; issues: string[] }
 
-export function namespaceFor({ tenant, product }: ManifestInput): string {
-  return `${tenant.trim()}-${product.trim()}`
+export function namespaceFor({ tenant, product, namespace }: ManifestInput): string {
+  return namespace?.trim() || `${tenant.trim()}-${product.trim()}`
 }
 
 function nameIssues(label: string, value: string): string[] {
@@ -63,7 +69,7 @@ export function renderManifests(input: ManifestInput): ManifestResult {
     return { success: false, issues: ['Enter a tenant and a product to render the resources.'] }
   }
 
-  const namespace = namespaceFor({ tenant, product })
+  const namespace = namespaceFor({ tenant, product, namespace: input.namespace })
   const serviceAccounts = SERVICE_ACCOUNT_SUFFIXES.map((suffix) => ({
     suffix,
     name: `${namespace}-${suffix}`,

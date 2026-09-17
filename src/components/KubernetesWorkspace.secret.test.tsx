@@ -43,7 +43,11 @@ describe('the Kubernetes API secret', () => {
     expect(dumpOf(localStorage)).not.toContain(SECRET)
     expect(dumpOf(sessionStorage)).not.toContain(SECRET)
     expect(Object.keys(sessionStorage)).toHaveLength(0)
-    expect(JSON.parse(localStorage.getItem(draftKey) ?? '{}')).toEqual({ tenant: 'acme', product: 'widgets' })
+    expect(JSON.parse(localStorage.getItem(draftKey) ?? '{}')).toEqual({
+      tenant: 'acme',
+      product: 'widgets',
+      namespace: '',
+    })
   })
 
   // The other half of the same decision. Losing it on reload is the cost that was accepted, so it
@@ -89,8 +93,10 @@ describe('the Kubernetes API secret', () => {
     expect(input).toHaveAttribute('spellcheck', 'false')
   })
 
-  describe('Clear API secret', () => {
-    const button = () => screen.getByRole('button', { name: 'Clear API secret' })
+  // Named for the category rather than for today's single field: it clears every key marked
+  // secret, so a second secret input is covered without the label becoming a lie.
+  describe('Clear secrets', () => {
+    const button = () => screen.getByRole('button', { name: 'Clear secrets' })
 
     it('is disabled while there is nothing to clear', () => {
       fillIn({ secret: '' })
@@ -113,6 +119,48 @@ describe('the Kubernetes API secret', () => {
       expect(screen.getByText('Cleared from the page.')).toBeInTheDocument()
       // The tenant and product are not secrets and are not collateral.
       expect(screen.getByRole('textbox', { name: 'Tenant' })).toHaveValue('acme')
+    })
+  })
+})
+
+describe('the namespace field', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  const namespaceInput = () => screen.getByRole('textbox', { name: 'Namespace' })
+
+  it('shows the derived default before anything is typed, as a template rather than a bare dash', () => {
+    render(<KubernetesWorkspace />)
+    expect(screen.getAllByText('<tenant>-<product>').length).toBeGreaterThan(0)
+  })
+
+  it('previews the derived value live as the tenant and product are filled in', () => {
+    fillIn({ secret: '' })
+    expect(namespaceInput()).toHaveValue('')
+    expect(screen.getAllByText('acme-widgets').length).toBeGreaterThan(0)
+    expect(output()).toContain('name: acme-widgets')
+  })
+
+  it('renames every resource once a namespace is given', () => {
+    fillIn({ secret: '' })
+    fireEvent.change(namespaceInput(), { target: { value: 'team-platform' } })
+
+    expect(output()).toContain('name: team-platform')
+    expect(output()).toContain('name: team-platform-deployer')
+    expect(output()).not.toContain('acme-widgets-')
+    // ...and the tenant/product labels are untouched.
+    expect(output()).toContain('tenant: acme')
+  })
+
+  it('is persisted, being a name and not a secret', () => {
+    fillIn({ secret: '' })
+    fireEvent.change(namespaceInput(), { target: { value: 'team-platform' } })
+
+    expect(JSON.parse(localStorage.getItem(draftKey) ?? '{}')).toEqual({
+      tenant: 'acme',
+      product: 'widgets',
+      namespace: 'team-platform',
     })
   })
 })

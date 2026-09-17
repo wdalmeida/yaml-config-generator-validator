@@ -12,6 +12,8 @@ export const KUBERNETES_FIELDS: FieldDescriptor[] = [
   // maxLength matches tenant-config's own bound, so the same value is valid in both places.
   { key: 'tenant', label: 'Tenant', type: 'text', placeholder: 'acme' },
   { key: 'product', label: 'Product', type: 'text', placeholder: 'product name' },
+  // Optional override. Blank derives `<tenant>-<product>` - see ManifestInput.namespace.
+  { key: 'namespace', label: 'Namespace', type: 'text', placeholder: 'leave blank to derive it' },
   // Optional. Blank leaves the Secret out of the rendered stream entirely - see ManifestInput.
   { key: 'apiSecret', label: 'API secret', type: 'text', placeholder: 'paste the value here', secret: true },
 ]
@@ -30,7 +32,7 @@ export const KUBERNETES_DEFINITION = {
 // by any script on the origin and surviving the tab closing. With this allow-list, a new input is
 // non-persisted until someone adds its key here, so the unsafe outcome requires a deliberate edit
 // to a line that says what it costs. Adding a key here is asserting the value is not a secret.
-export const PERSISTED_KUBERNETES_KEYS = ['tenant', 'product'] as const
+export const PERSISTED_KUBERNETES_KEYS = ['tenant', 'product', 'namespace'] as const
 export type PersistedKubernetesKey = (typeof PERSISTED_KUBERNETES_KEYS)[number]
 
 // Fields the descriptors themselves mark as secret, derived rather than listed a second time, so
@@ -53,6 +55,7 @@ export const SECRET_KUBERNETES_KEYS = KUBERNETES_FIELDS.filter(
 export interface KubernetesDraft {
   tenant: string
   product: string
+  namespace: string
   // Never persisted - see SECRET_KUBERNETES_KEYS above.
   apiSecret: string
   // Inputs added later live here too. They are held in memory and rendered like any other -
@@ -63,7 +66,7 @@ export interface KubernetesDraft {
 export type PersistedKubernetesDraft = Pick<KubernetesDraft, PersistedKubernetesKey>
 
 export function emptyKubernetesDraft(): KubernetesDraft {
-  return { tenant: '', product: '', apiSecret: '' }
+  return { tenant: '', product: '', namespace: '', apiSecret: '' }
 }
 
 export function kubernetesDraftKey(): string {
