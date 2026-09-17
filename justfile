@@ -392,10 +392,18 @@ markdown: _out
     [ -f markdownlint-results.sarif ] && mv markdownlint-results.sarif "{{out}}/"
     exit $status
 
-# ci.yml markdown job: check every relative + external link in every *.md (network)
+# ci.yml links job: relative links only - a filesystem check, no network
 [group('ci')]
 links:
     npm run lint:links
+
+# Runs weekly in CI rather than per-PR: link rot is driven by time, not by the commit, and
+# github.com rate-limits unauthenticated runners. link-check.yml files an issue when it fails.
+#
+# link-check.yml external job: every link including external URLs (network, slow)
+[group('ci')]
+links-external:
+    npm run lint:links:external
 
 # ci.yml audit job
 # ci.yml helm job: lint charts/, render them, and check every manifest.
@@ -476,10 +484,14 @@ loadtest *args:
 audit:
     npm audit --audit-level=high
 
-# ci.yml actionlint job
+# ci-ok is the only required status check for main, so a job missing from its needs: is
+# enforced by nothing at all - lint:ci-gate is what catches that.
+#
+# ci.yml actionlint job: lint the workflow YAML, then check ci-ok covers every job
 [group('ci')]
 actionlint:
     actionlint -color
+    npm run lint:ci-gate
 
 # ci.yml gitleaks job: secret scanning over the working tree
 [group('ci')]

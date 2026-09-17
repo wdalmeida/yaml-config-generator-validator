@@ -1,0 +1,103 @@
+# External URL checking, split out of ci.yml's `links` job.
+#
+# Relative links are a filesystem check and stay on every PR - a commit can break one by moving
+# a file. External URLs are the opposite: they rot because somebody else's site changed, not
+# because of this commit, and checking ~40 of them (mostly github.com, which rate-limits
+# unauthenticated runners) is slow and intermittently red for reasons no PR author can act on.
+# So they are checked on a schedule instead.
+#
+# A red scheduled run is easy to miss on a solo-maintained repo, so this files an issue rather
+# than relying on somebody noticing the Actions tab - the same argument container.yml's cron
+# comment makes about dated CVE acceptances. There is deliberately no auto-fix PR: a dead URL
+# has no computable replacement, and markdown-link-check reports redirects as alive, so such a
+# PR would be either empty or wrong.
+name: Link check
+
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-check-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  external:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check external links
+        id: links
+        continue-on-error: true
+        run: npm run lint:links:external 2>&1 | tee link-report.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: link-report
+          path: link-report.txt
+          retention-days: 90
+
+      # One standing issue, not one per run: 52 identical issues a year is how a useful signal
+      # becomes noise somebody mutes.
+      - name: File or update the broken-links issue
+        if: steps.links.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh label create broken-links --repo "$REPO" \
+            --description 'Dead external link found by the weekly link check' --color d93f0b ||
+            echo 'label already exists'
+
+          # Just the dead-link lines - the full log is on the artifact above.
+          dead="$(grep -E '\[.\] .* Status:' link-report.txt | sort -u || true)"
+
+          # shellcheck disable=SC2016  # the ``` fences are literal Markdown, not substitutions
+          {
+            echo 'The weekly external link check found dead links.'
+            echo
+            echo '```'
+            printf '%s\n' "$dead"
+            echo '```'
+            echo
+            echo "[Full run]($RUN_URL)"
+            echo
+            echo 'Relative links are checked on every PR by ci.yml (the `links` job); this'
+            echo 'covers external URLs only. Reproduce locally with `just links-external`.'
+          } >issue-body.md
+
+          # One standing issue, not one per run: 52 identical issues a year is how a useful
+          # signal becomes noise somebody mutes.
+          existing="$(gh issue list --repo "$REPO" --label broken-links --state open \
+            --limit 1 --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file issue-body.md
+            echo "commented on #$existing"
+          else
+            gh issue create --repo "$REPO" --label broken-links \
+              --title 'Dead external links in the docs' --body-file issue-body.md
+          fi
+
+      - name: Fail the run if links are dead
+        if: steps.links.outcome == 'failure'
+        run: exit 1

@@ -7,6 +7,14 @@ on:
 permissions:
   contents: read
 
+# Same idiom as ci.yml: on a pull_request, head_ref names the branch so a superseded run is
+# cancelled; on push/schedule head_ref is empty, so run_id makes the group unique and nothing
+# is ever cancelled. That is what keeps a release or an in-flight Sigstore attestation safe
+# without needing a special case - a branch-keyed group would be actively harmful here.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -43,7 +51,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run build
       - run: cd dist && zip -r ../dist.zip .
 
