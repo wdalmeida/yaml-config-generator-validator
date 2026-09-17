@@ -75,6 +75,14 @@ shape invites someone to fill a real one in before applying.
 of which is a secret by any reading. Everything else is held in component state for as long as
 the tab is open and is dropped on the way to storage by `persistedKubernetesDraft`.
 
+There are three tiers, and the default is the strictest:
+
+| Tier | Where | Lives until | What is on it |
+| --- | --- | --- | --- |
+| `PERSISTED_KUBERNETES_KEYS` | `localStorage` | cleared by hand | `tenant`, `product` |
+| `SESSION_KUBERNETES_KEYS` | `sessionStorage` | the tab closes | `apiSecret` |
+| *(neither list)* | memory only | the page unloads | anything added later |
+
 The direction is the point. These resources will eventually need a real secret typed in — a
 registry credential, a token that already exists — and with a list of keys to *exclude*, adding
 that input would persist it by default: the value simply appears in storage, readable by any
@@ -92,6 +100,44 @@ Three consequences worth knowing before changing this:
   first write rather than being read back into state and re-saved.
 - **`src/kubernetes/index.test.ts` pins the list's exact contents**, so growing it fails a test
   before it ships. Adding a key there is asserting that value is not a secret.
+
+### The API secret
+
+`apiSecret` is the one input that is a secret by construction rather than by accident, and it is
+on the **session** tier for a reason that cuts both ways. Keeping it out of `localStorage` is
+obvious. Keeping it in `sessionStorage` rather than memory alone is the less obvious half: a value
+that vanishes on every refresh is a value people copy somewhere more permanent and less careful — a
+note file, a chat message to themselves — which is a worse outcome than the one being avoided.
+Surviving a reload and not surviving the tab is the trade that avoids both.
+
+This is not encryption and not isolation. While the tab is open, any script on the origin can read
+`sessionStorage`. What it buys is that nothing is left on the machine afterwards.
+
+Three details of the rendered Secret are deliberate:
+
+- **`stringData`, not `data`.** Base64 is an encoding, not encryption. Writing the value out
+  encoded would make it *look* protected while being exactly as readable, and `kubectl` accepts
+  `stringData` directly. The output says so in a comment.
+- **Blank means the Secret is omitted entirely**, not emitted empty. Applying
+  `stringData: {api_secret: ""}` would cheerfully overwrite a real secret already in the cluster
+  with nothing; an absent document cannot.
+- **The document carries a "do not commit" banner.** Every other file this tool produces is meant
+  to be committed to a repository. This one is the exception, and the warning has to survive the
+  copy/paste into a terminal, so it lives in the YAML rather than only in the UI.
+
+**The input is not masked, on purpose.** A `type="password"` box would be theatre here: the value
+is rendered in plain text in the output panel a few hundred pixels to the right, because producing
+that manifest is the entire point of the field. Masking the input while printing the value beside
+it buys nothing and suggests a protection that isn't there. What the `secret: true` flag on the
+`FieldDescriptor` does instead is real — `autocomplete="off"`, `autocorrect="off"` and
+`spellcheck="false"`, each of which otherwise hands the value to machinery nobody chose (a password
+manager, an autocorrect dictionary, a remote spell-checking service). If masking is wanted anyway,
+it is a one-line change in `FieldRow` — flagging the reasoning, not refusing the request.
+
+**Clear API secret** blanks the field and removes the `sessionStorage` key outright rather than
+writing an empty value over it — an emptied blob under a key named `secret:kubernetes` still tells
+a reader what used to be there. The removal lives in the persistence effect, not the button's
+handler, so emptying the field by hand behaves identically instead of only the button being safe.
 
 What this does *not* cover: the clipboard. **Copy all** puts the whole rendered stream on the
 system clipboard, which is the point of the pill, and a secret filled into an input would be in

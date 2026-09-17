@@ -1,12 +1,17 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { writePersistedState } from '../lib/persisted-state'
+import { writePersistedState, writeSessionState } from '../lib/persisted-state'
 import {
+  clearKubernetesSecrets,
   emptyKubernetesDraft,
   KUBERNETES_FIELDS,
   kubernetesDraftKey,
+  kubernetesSecretKey,
   persistedKubernetesDraft,
   readKubernetesDraft,
+  readKubernetesSecrets,
   renderManifests,
+  sessionKubernetesDraft,
+  SESSION_KUBERNETES_KEYS,
   type KubernetesDraft,
 } from '../kubernetes'
 import { FieldRow } from './fields/FieldRow'
@@ -22,18 +27,49 @@ export function KubernetesWorkspace() {
   // default on the one pill whose inputs will eventually include a secret. Here the draft is
   // ordinary component state and the write is narrowed to the allow-list on the way out, so an
   // input that nobody has explicitly cleared for storage simply never reaches it.
-  const [draft, setDraft] = useState<KubernetesDraft>(() => ({ ...emptyKubernetesDraft(), ...readKubernetesDraft() }))
+  const [draft, setDraft] = useState<KubernetesDraft>(() => ({
+    ...emptyKubernetesDraft(),
+    ...readKubernetesDraft(),
+    ...readKubernetesSecrets(),
+  }))
   const [copied, setCopied] = useState(false)
+  const [cleared, setCleared] = useState(false)
 
+  // Two writes to two stores, each narrowed to its own list on the way out. Splitting them here
+  // rather than inside one helper keeps the destination visible at the call site: it should be
+  // hard to add a key to the wrong one without noticing which store you just chose.
   useEffect(() => {
     writePersistedState(kubernetesDraftKey(), persistedKubernetesDraft(draft))
   }, [draft])
+
+  useEffect(() => {
+    const session = sessionKubernetesDraft(draft)
+    // An empty record is still a record: a blob sitting under a key named `secret:kubernetes`
+    // tells a reader exactly what used to be there. So the last secret leaving removes the key
+    // outright - and doing it here rather than in the button's handler means emptying the field
+    // by hand behaves identically to pressing Clear, instead of only the button being safe.
+    if (Object.values(session).every((value) => value.trim() === '')) clearKubernetesSecrets()
+    else writeSessionState(kubernetesSecretKey(), session)
+  }, [draft])
+
+  const hasSecret = SESSION_KUBERNETES_KEYS.some((key) => draft[key].trim() !== '')
+
+  function clearSecrets() {
+    setDraft((prev) => {
+      const next = { ...prev }
+      for (const key of SESSION_KUBERNETES_KEYS) next[key] = ''
+      return next
+    })
+    setCleared(true)
+    setCopied(false)
+  }
 
   const result = renderManifests(draft)
 
   function setField(key: string, value: unknown) {
     setDraft((prev) => ({ ...prev, [key]: String(value ?? '') }))
     setCopied(false)
+    setCleared(false)
   }
 
   function handleCopy() {
@@ -57,8 +93,26 @@ export function KubernetesWorkspace() {
         {KUBERNETES_FIELDS.map((field) => (
           <section className="card-flat" key={field.key}>
             <FieldRow field={field} value={draft[field.key] ?? ''} onChange={(value) => setField(field.key, value)} />
+            {field.type === 'text' && field.secret && (
+              <p className="card-note">
+                Kept in this tab only — it survives a reload, and the browser drops it when the tab
+                closes. It is never written to <code>localStorage</code> alongside the tenant and
+                product. Leave it blank to omit the Secret from the output.
+              </p>
+            )}
           </section>
         ))}
+
+        <section className="card-flat">
+          <button type="button" disabled={!hasSecret} onClick={clearSecrets}>
+            Clear API secret
+          </button>
+          <p className="card-note" aria-live="polite">
+            {cleared
+              ? 'Cleared from this tab and removed from the page.'
+              : 'Removes it from the field, from the output, and from this tab’s storage.'}
+          </p>
+        </section>
 
         {result.success && (
           <section className="card">
@@ -69,6 +123,11 @@ export function KubernetesWorkspace() {
               </li>
               <li>2 ServiceAccounts, with a token Secret each</li>
               <li>1 Role and 1 RoleBinding covering both</li>
+              {hasSecret && (
+                <li>
+                  1 Opaque Secret <code>{result.namespace}-api</code> — <strong>do not commit it</strong>
+                </li>
+              )}
             </ul>
           </section>
         )}

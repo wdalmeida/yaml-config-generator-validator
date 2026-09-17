@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   emptyKubernetesDraft,
+  sessionKubernetesDraft,
+  SESSION_KUBERNETES_KEYS,
   getKubernetesStatus,
   kubernetesDraftKey,
   persistedKubernetesDraft,
@@ -19,6 +21,25 @@ describe('the Kubernetes persistence allow-list', () => {
   // in a review rather than by autocomplete - so growing the list has to break a test first.
   it('contains exactly the two values that are not secrets', () => {
     expect(PERSISTED_KUBERNETES_KEYS).toEqual(['tenant', 'product'])
+  })
+
+  // The single most important assertion in this file: apiSecret is a secret by construction, and
+  // the list above is what decides whether it outlives the tab. A refactor that "tidied up" the
+  // three tiers into one would show up here first.
+  it('does not contain the API secret', () => {
+    expect(PERSISTED_KUBERNETES_KEYS).not.toContain('apiSecret')
+    expect(SESSION_KUBERNETES_KEYS).toEqual(['apiSecret'])
+    expect(persistedKubernetesDraft({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toEqual({
+      tenant: 'acme',
+      product: 'widgets',
+    })
+  })
+
+  it('narrows the session tier the same way, and in the other direction', () => {
+    expect(sessionKubernetesDraft({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toEqual({
+      apiSecret: 's3cret',
+    })
+    expect(sessionKubernetesDraft({})).toEqual({ apiSecret: '' })
   })
 
   it('drops any key that is not on the list', () => {
@@ -47,6 +68,11 @@ describe('the Kubernetes persistence allow-list', () => {
     )
 
     expect(readKubernetesDraft()).toEqual({ tenant: 'acme', product: 'widgets' })
+  })
+
+  it('keeps the pill status independent of the secret, which is optional', () => {
+    expect(getKubernetesStatus({ tenant: 'acme', product: 'widgets' })).toBe('valid')
+    expect(getKubernetesStatus({ tenant: 'acme', product: 'widgets', apiSecret: 's3cret' })).toBe('valid')
   })
 
   it('still reports the pill status from what it did read', () => {

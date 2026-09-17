@@ -107,3 +107,37 @@ describe('renderManifests', () => {
     })
   })
 })
+
+describe('the API secret document', () => {
+  const base = { tenant: 'acme', product: 'widgets' }
+
+  it('is absent unless a value was entered, and blank counts as absent', () => {
+    for (const apiSecret of [undefined, '', '   ']) {
+      const result = renderManifests({ ...base, apiSecret })
+      expect(result.success).toBe(true)
+      if (result.success) expect(result.yaml).not.toContain('Opaque')
+    }
+  })
+
+  it('carries the value verbatim, trimmed, under the documented key', () => {
+    const result = renderManifests({ ...base, apiSecret: '  s3cret-value  ' })
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.yaml).toContain('name: acme-widgets-api')
+    expect(result.yaml).toContain('type: Opaque')
+    expect(result.yaml).toContain('api_secret: s3cret-value')
+  })
+
+  // The derived-name rule the rest of this module already follows: each name is checked on its
+  // own, because which suffix is longest is an accident of the current names.
+  it('validates its own name length rather than trusting the namespace check', () => {
+    const tenant = 'a'.repeat(30)
+    const product = 'b'.repeat(29)
+    const result = renderManifests({ tenant, product, apiSecret: 's3cret' })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.issues.join(' ')).toContain('API Secret')
+  })
+})
