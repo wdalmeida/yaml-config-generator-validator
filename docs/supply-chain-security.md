@@ -128,8 +128,10 @@ now scores this repo 100/100.
 ## The release artifact gets its own attestation
 
 `supply-chain.yml`'s `sbom` job attests a `dist/` build on every ordinary push to `main` that
-touches something other than prose (a `paths-ignore:` filter skips `docs/**`, `**/*.md` and
-`LICENSE`; a weekly cron covers the time-dependent findings regardless) - but
+touches something other than prose (each job is gated on the `supplychain` bucket, which is
+defined by *exclusion* - anything that is not `docs/`, `LICENSE` or a `*.md` file - so a file
+type nobody has thought of yet fails towards being scanned rather than away from it; a weekly
+cron covers the time-dependent findings regardless, since only `pull_request` is gated) - but
 that's *not* the file anyone downloads. `release.yml`'s `build-and-attach` job does an
 independent build against the actual release tag, zips it to `dist.zip`, and attaches that to
 the GitHub Release. Since v-next, `build-and-attach` generates its own SBOM (same Syft flags as

@@ -1,50 +1,10 @@
 name: CodeQL
 
-# This analyses JavaScript/TypeScript, so anything that cannot become JS/TS is filtered out.
-# Skipping analysis on a push does not clear existing alerts, and the weekly cron re-analyses
-# main regardless, so a gap here closes itself.
-# Nothing in this workflow is a required status check. If that ever changes, these filters
-# must go with it: a workflow skipped by a path filter never creates its check runs, so a
-# required check would sit Pending forever and the PR could never merge. ci.yml gates its jobs
-# from the inside (a `changes` job plus `if:`) for exactly that reason.
-#
-# The two lists below are identical and must stay that way - GitHub Actions has no YAML
-# anchors, and actionlint will not notice them drifting. Change one, change the other.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
-      - 'charts/**'
-      - 'container/**'
-      - 'Containerfile*'
-      - '.containerignore'
-      - '.devcontainer/**'
-      - '.trivyignore.yaml'
-      - 'osv-scanner.toml'
-      - '.kube-linter.yaml'
-      - 'justfile'
-      - 'Brewfile'
-      - 'renovate.json'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
-      - 'charts/**'
-      - 'container/**'
-      - 'Containerfile*'
-      - '.containerignore'
-      - '.devcontainer/**'
-      - '.trivyignore.yaml'
-      - 'osv-scanner.toml'
-      - '.kube-linter.yaml'
-      - 'justfile'
-      - 'Brewfile'
-      - 'renovate.json'
   schedule:
     - cron: '23 4 * * 1'
 
@@ -52,12 +12,22 @@ on:
 # cancelled; on push/schedule head_ref is empty, so run_id makes the group unique and nothing
 # is ever cancelled. That is what keeps a release or an in-flight Sigstore attestation safe
 # without needing a special case - a branch-keyed group would be actively harmful here.
+# Default-deny at the workflow level; `analyze` re-declares the scopes CodeQL actually needs.
+# The classify and aggregate jobs need nothing beyond reading the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-buckets.yml # zizmor: ignore[self-repository]
+
   analyze:
+    needs: changes
+    if: needs.changes.outputs.codeql == 'true' # JS/TS sources, or the config that compiles them
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -79,3 +49,30 @@ jobs:
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           category: "/language:${{ matrix.language }}"
+
+  # The required status check for this workflow. `analyze` is a matrix job, and a matrix job
+  # skipped at the top level never expands - so its per-language check runs are never created
+  # and could not be required directly. This aggregate always runs and always reports, which
+  # sidesteps that entirely.
+  codeql-ok:
+    if: always()
+    needs: [changes, analyze]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEEDS"
+          bad="$(printf '%s' "$NEEDS" | jq -r 'to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled")
+            | "\(.key) (\(.value.result))"')"
+          if [ -n "$bad" ]; then
+            echo "::error::CodeQL failed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All jobs succeeded or were skipped."

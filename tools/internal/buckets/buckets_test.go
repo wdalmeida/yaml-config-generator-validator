@@ -104,11 +104,15 @@ func TestMovedScriptsOnlyEverRunMore(t *testing.T) {
 	}
 }
 
-// npm deps reach every npm-driven job: oxlint, ajv, markdownlint-cli2 and vitest all come from
-// the lockfile, so a bump has to run all of them.
+// npm deps reach every npm-driven job: oxlint, markdownlint-cli2 and vitest all come from the
+// lockfile, so a bump has to run all of them. It also reaches the three scan workflows - the
+// image builds the app inside itself, CodeQL analyses the dependency tree, and the SBOM is
+// generated from the lockfile - which is the whole reason a dependency bump is worth scanning.
 func TestNpmDepsReachEveryNpmJob(t *testing.T) {
 	for _, file := range []string{"package.json", "package-lock.json"} {
-		on(t, Classify([]string{file}), "app", "schemas", "markdown", "links", "deps")
+		on(t, Classify([]string{file}),
+			"app", "schemas", "markdown", "links", "deps",
+			"container", "codeql", "supplychain")
 	}
 }
 
@@ -237,15 +241,22 @@ func TestAllTrueCoversEveryDeclaredBucket(t *testing.T) {
 	on(t, got, Names...)
 }
 
-// Every bucket in Names must have a pattern, or Classify silently reports it false forever.
-func TestEveryBucketHasAPattern(t *testing.T) {
+// Every bucket in Names must be defined exactly once, by a positive pattern or by an exclusion
+// pattern. A bucket with neither is reported false forever; one with both would make Classify's
+// precedence load-bearing and invisible.
+func TestEveryBucketIsDefinedExactlyOnce(t *testing.T) {
 	for _, name := range Names {
-		if patterns[name] == nil {
-			t.Errorf("bucket %q has no pattern", name)
+		_, positive := patterns[name]
+		_, exclusion := excludePatterns[name]
+		switch {
+		case !positive && !exclusion:
+			t.Errorf("bucket %q has neither a pattern nor an exclusion pattern", name)
+		case positive && exclusion:
+			t.Errorf("bucket %q has both a pattern and an exclusion pattern", name)
 		}
 	}
-	if len(patterns) != len(Names) {
-		t.Errorf("%d patterns for %d buckets - one of them is unreachable", len(patterns), len(Names))
+	if total := len(patterns) + len(excludePatterns); total != len(Names) {
+		t.Errorf("%d definitions for %d buckets - one of them is unreachable", total, len(Names))
 	}
 }
 
@@ -372,19 +383,77 @@ func TestGoBucketNamesItsOwnInputs(t *testing.T) {
 	}
 }
 
-// TestRenovateBucket covers the bucket behind ci.yml's `renovate` job. renovate.json is in no
-// other bucket, so before that job existed a change to it ran nothing at all that could read it.
+// TestRenovateBucket covers the bucket behind ci.yml's `renovate` job. Before that job existed,
+// a change to renovate.json ran nothing at all that could read it. It also sets "supplychain",
+// which is correct rather than incidental: that bucket is defined by exclusion and renovate.json
+// is not prose, so it fails towards being scanned.
 func TestRenovateBucket(t *testing.T) {
-	got := Classify([]string{"renovate.json"})
-	if !got.Values["renovate"] {
-		t.Error("renovate.json should set the renovate bucket")
-	}
-	for name, value := range got.Values {
-		if name != "renovate" && value {
-			t.Errorf("renovate.json should not set %q", name)
-		}
-	}
+	on(t, Classify([]string{"renovate.json"}), "renovate", "supplychain")
 	if Classify([]string{"src/App.tsx"}).Values["renovate"] {
 		t.Error("src/App.tsx should not set the renovate bucket")
+	}
+}
+
+// TestScanWorkflowBuckets covers the three buckets behind container.yml, supply-chain.yml and
+// codeql.yml. Each of those workflows now gates its own jobs and is fronted by an always-running
+// aggregate that is a required status check, so a bucket that is wrongly false here means a
+// security scan silently does not run on a PR that merges green. These assertions are the thing
+// standing in the way of that.
+func TestScanWorkflowBuckets(t *testing.T) {
+	cases := []struct {
+		path      string
+		container bool
+		codeql    bool
+		// supplychain is true for everything that is not prose, so it is asserted as !prose.
+		prose bool
+	}{
+		{path: "src/App.tsx", container: true, codeql: true},
+		{path: "package-lock.json", container: true, codeql: true},
+		{path: "index.html", container: true, codeql: true},
+		{path: "vite.config.ts", container: true, codeql: true},
+		{path: "Containerfile", container: true},
+		{path: "Containerfile.redhat", container: true},
+		{path: "container/nginx.conf", container: true},
+		{path: ".containerignore", container: true},
+		// The scan gates themselves - a dated acceptance expiring must rebuild and rescan.
+		{path: ".trivyignore.yaml", container: true},
+		{path: "osv-scanner.toml", container: true},
+		// hadolint is the only check .devcontainer/Dockerfile has ever had.
+		{path: ".devcontainer/Dockerfile", container: true},
+		{path: "charts/x/values.yaml"},
+		{path: "docs/container.md", prose: true},
+		{path: "README.md", prose: true},
+		{path: "LICENSE", prose: true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.path, func(t *testing.T) {
+			got := Classify([]string{c.path})
+			if got.Values["container"] != c.container {
+				t.Errorf("container = %v, want %v", got.Values["container"], c.container)
+			}
+			if got.Values["codeql"] != c.codeql {
+				t.Errorf("codeql = %v, want %v", got.Values["codeql"], c.codeql)
+			}
+			if want := !c.prose; got.Values["supplychain"] != want {
+				t.Errorf("supplychain = %v, want %v", got.Values["supplychain"], want)
+			}
+		})
+	}
+}
+
+// TestSupplychainRunsUnlessEverythingIsProse pins the exclusion semantics: one non-prose file
+// among many prose ones must still trigger it. A positive-list bucket would get this wrong the
+// day somebody adds a file type nobody thought to list.
+func TestSupplychainRunsUnlessEverythingIsProse(t *testing.T) {
+	if got := Classify([]string{"README.md", "docs/a.md", "LICENSE"}); got.Values["supplychain"] {
+		t.Error("an all-prose change should not run the supply-chain scans")
+	}
+	if got := Classify([]string{"README.md", "docs/a.md", "charts/x/values.yaml"}); !got.Values["supplychain"] {
+		t.Error("one non-prose file among prose must still run the supply-chain scans")
+	}
+	// A file type nobody has thought of yet must run them, not skip them.
+	if got := Classify([]string{"some/new/thing.rs"}); !got.Values["supplychain"] {
+		t.Error("an unrecognised file type must fail towards running the scans")
 	}
 }
