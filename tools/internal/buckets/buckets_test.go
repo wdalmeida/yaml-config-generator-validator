@@ -371,3 +371,20 @@ func TestGoBucketNamesItsOwnInputs(t *testing.T) {
 		})
 	}
 }
+
+// TestRenovateBucket covers the bucket behind ci.yml's `renovate` job. renovate.json is in no
+// other bucket, so before that job existed a change to it ran nothing at all that could read it.
+func TestRenovateBucket(t *testing.T) {
+	got := Classify([]string{"renovate.json"})
+	if !got.Values["renovate"] {
+		t.Error("renovate.json should set the renovate bucket")
+	}
+	for name, value := range got.Values {
+		if name != "renovate" && value {
+			t.Errorf("renovate.json should not set %q", name)
+		}
+	}
+	if Classify([]string{"src/App.tsx"}).Values["renovate"] {
+		t.Error("src/App.tsx should not set the renovate bucket")
+	}
+}

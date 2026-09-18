@@ -33,6 +33,7 @@ jobs:
       charts: ${{ steps.buckets.outputs.charts }}
       workflows: ${{ steps.buckets.outputs.workflows }}
       go: ${{ steps.buckets.outputs.go }}
+      renovate: ${{ steps.buckets.outputs.renovate }}
     steps:
       # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
       # available, which is what the classifier diffs. Do NOT add a `ref:` here: it would
@@ -416,6 +417,27 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: go run ./tools/cmd/check-markdown-links
 
+  # renovate.json is read by nothing else in CI, so before this job the only feedback on a typo
+  # was Renovate opening a Config Warning issue after the merge. Runs the official validator
+  # rather than a hand-rolled schema check, because Renovate's config has semantics no JSON
+  # Schema expresses (preset resolution, manager-scoped option validity).
+  #
+  # It pulls ~600 packages for one file, which is why it is bucket-gated: renovate.json changes
+  # a handful of times a year, and on every other PR this job does not start at all.
+  renovate:
+    needs: changes
+    if: needs.changes.outputs.renovate == 'true' # renovate.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: npm run lint:renovate
+
   audit:
     needs: changes
     if: needs.changes.outputs.deps == 'true' # package.json / package-lock.json
@@ -617,6 +639,7 @@ jobs:
       - markdown
       - links
       - audit
+      - renovate
       - actionlint
       - gitleaks
       - zizmor

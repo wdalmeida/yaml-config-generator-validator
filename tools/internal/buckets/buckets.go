@@ -26,7 +26,7 @@ import "regexp"
 
 // Names is the bucket list, in the order it is reported and written to $GITHUB_OUTPUT. It is
 // also the list ci.yml's `changes` job declares as outputs.
-var Names = []string{"app", "schemas", "markdown", "links", "deps", "charts", "workflows", "go"}
+var Names = []string{"app", "schemas", "markdown", "links", "deps", "charts", "workflows", "go", "renovate"}
 
 // npmDeps is shared by every npm-driven job: oxlint, ajv, markdownlint-cli2 and vitest all
 // come from here.
@@ -60,6 +60,9 @@ var patterns = map[string]*regexp.Regexp{
 	// than borrowing an unrelated bucket - if tools/ is ever dropped from everythingPattern,
 	// this keeps the job correct instead of silently never running.
 	"go": regexp.MustCompile(`^(tools/|go\.mod$|go\.sum$)`),
+	// renovate.json is in no other bucket - nothing else in CI reads it - so without this the
+	// only feedback on a typo there is Renovate opening a Config Warning issue after the merge.
+	"renovate": regexp.MustCompile(`^renovate\.json$`),
 }
 
 // Result is what a classification run produced: one value per bucket in Names, plus the reason
