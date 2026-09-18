@@ -22,32 +22,7 @@ jobs:
   # ci-ok below has this job in its `needs:`, so a failure here goes red rather than silently
   # skipping every job it gates.
   changes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      app: ${{ steps.buckets.outputs.app }}
-      schemas: ${{ steps.buckets.outputs.schemas }}
-      markdown: ${{ steps.buckets.outputs.markdown }}
-      links: ${{ steps.buckets.outputs.links }}
-      deps: ${{ steps.buckets.outputs.deps }}
-      charts: ${{ steps.buckets.outputs.charts }}
-      workflows: ${{ steps.buckets.outputs.workflows }}
-      go: ${{ steps.buckets.outputs.go }}
-      renovate: ${{ steps.buckets.outputs.renovate }}
-    steps:
-      # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
-      # available, which is what the classifier diffs. Do NOT add a `ref:` here: it would
-      # replace the merge commit with the PR head and silently change what HEAD^1 means.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 2
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.27.1'
-          cache-dependency-path: go.sum
-      - id: buckets
-        run: go run ./tools/cmd/changed-buckets
+    uses: ./.github/workflows/changed-buckets.yml # zizmor: ignore[self-repository]
 
   test:
     needs: changes
@@ -646,6 +621,7 @@ jobs:
       - plumber
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions: {}
     steps:
       - name: Fail if any job failed or was cancelled
         env:

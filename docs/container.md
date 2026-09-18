@@ -158,14 +158,21 @@ sync.
 ## What CI does with it
 
 `.github/workflows/container.yml` runs on every push to `main` and every PR **that touches a
-file able to change either image** - a `paths-ignore:` filter skips prose, `charts/`, and the
-lint/release config. So a docs-only merge to `main` publishes no new image: `sha-<short7>` will
-not exist for that commit and `:latest` keeps pointing at the previous one, whose bytes are
-identical anyway. Nothing in this repo resolves `sha-*` tags. The weekly cron is unaffected by
-path filters, which is what keeps the dated acceptances below honest regardless. `.devcontainer/**`
-is deliberately *not* filtered out - the `hadolint` job is the only check that file has ever
-had. None of this workflow's checks are required for merge, and they cannot become required
-while these filters exist (see `docs/releasing.md`). Nothing
+file able to change either image** - each job is gated on the `container` bucket
+(`tools/internal/buckets`), which covers both Containerfiles, `container/`, `.containerignore`,
+the two scan-acceptance files, `.devcontainer/` and the app sources the image builds inside
+itself. So a docs-only merge to `main` publishes no new image: `sha-<short7>` will not exist
+for that commit and `:latest` keeps pointing at the previous one, whose bytes are identical
+anyway. Nothing in this repo resolves `sha-*` tags. The weekly cron gets all-true from the
+classifier, since only `pull_request` is ever gated - which is what keeps the dated acceptances
+below honest regardless. `.devcontainer/` is deliberately in the bucket: the `hadolint` job is
+the only check that file has ever had.
+
+**`container-ok` is this workflow's required status check.** It needs every other job, runs
+`if: always()`, and fails unless each reports success or skipped - so the jobs above can be
+skipped without a required check sitting Pending forever, which is what a workflow-level
+`paths-ignore:` would have caused. That filter is what previously kept this workflow from
+being required at all, meaning a PR could merge with a red image build. Nothing
 about the site's own delivery depends on it — the app ships via
 [GitHub Pages](deploying-to-github-pages.md) — but without it the container path would
 rot silently.

@@ -1,0 +1,91 @@
+# Works out which categories of file a pull request touched, so each calling workflow can skip
+# the jobs a change cannot possibly affect. One reusable workflow rather than a copy per caller:
+# four workflows gate on this, and four drifting copies of the checkout depth or the Go version
+# is exactly the kind of duplication that goes wrong quietly.
+#
+# Every caller is fronted by an always-running aggregate job (ci-ok, container-ok,
+# supply-chain-ok, codeql-ok) which is what the branch ruleset actually requires. That is the
+# arrangement that makes skipping safe: a workflow skipped by a `paths:` filter never creates
+# its check runs at all, so a required check would sit Pending forever and the PR could never
+# merge. Nothing here relies on GitHub's treatment of a skipped required check.
+#
+# The rules the classifier itself follows - fail open, .github/** runs everything, pull_request
+# only - live in tools/internal/buckets, with the tests that pin them.
+name: Changed buckets
+
+on:
+  workflow_call:
+    outputs:
+      app:
+        description: App sources, build/lint config, or the npm tree
+        value: ${{ jobs.classify.outputs.app }}
+      schemas:
+        description: Schema/onboarding JSON, or the npm tree
+        value: ${{ jobs.classify.outputs.schemas }}
+      markdown:
+        description: A *.md file or the markdownlint config
+        value: ${{ jobs.classify.outputs.markdown }}
+      links:
+        description: A *.md file, or a non-markdown file the docs link to
+        value: ${{ jobs.classify.outputs.links }}
+      deps:
+        description: package.json / package-lock.json
+        value: ${{ jobs.classify.outputs.deps }}
+      charts:
+        description: The Helm chart or its kube-linter config
+        value: ${{ jobs.classify.outputs.charts }}
+      workflows:
+        description: Anything under .github/ (which also forces every other bucket on)
+        value: ${{ jobs.classify.outputs.workflows }}
+      go:
+        description: The tools/ Go module
+        value: ${{ jobs.classify.outputs.go }}
+      renovate:
+        description: renovate.json
+        value: ${{ jobs.classify.outputs.renovate }}
+      container:
+        description: Either Containerfile, the nginx config, the scan acceptances, or the app the image serves
+        value: ${{ jobs.classify.outputs.container }}
+      supplychain:
+        description: Anything that is not prose - defined by exclusion so a new file type fails towards being scanned
+        value: ${{ jobs.classify.outputs.supplychain }}
+      codeql:
+        description: JavaScript/TypeScript sources and the config that compiles them
+        value: ${{ jobs.classify.outputs.codeql }}
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      app: ${{ steps.buckets.outputs.app }}
+      schemas: ${{ steps.buckets.outputs.schemas }}
+      markdown: ${{ steps.buckets.outputs.markdown }}
+      links: ${{ steps.buckets.outputs.links }}
+      deps: ${{ steps.buckets.outputs.deps }}
+      charts: ${{ steps.buckets.outputs.charts }}
+      workflows: ${{ steps.buckets.outputs.workflows }}
+      go: ${{ steps.buckets.outputs.go }}
+      renovate: ${{ steps.buckets.outputs.renovate }}
+      container: ${{ steps.buckets.outputs.container }}
+      supplychain: ${{ steps.buckets.outputs.supplychain }}
+      codeql: ${{ steps.buckets.outputs.codeql }}
+    steps:
+      # fetch-depth: 2 is the whole requirement - it makes both parents of the PR merge commit
+      # available, which is what the classifier diffs. Do NOT add a `ref:` here: it would
+      # replace the merge commit with the PR head and silently change what HEAD^1 means.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: go.sum
+      - id: buckets
+        run: go run ./tools/cmd/changed-buckets

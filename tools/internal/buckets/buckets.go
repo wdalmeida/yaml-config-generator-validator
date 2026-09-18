@@ -26,7 +26,10 @@ import "regexp"
 
 // Names is the bucket list, in the order it is reported and written to $GITHUB_OUTPUT. It is
 // also the list ci.yml's `changes` job declares as outputs.
-var Names = []string{"app", "schemas", "markdown", "links", "deps", "charts", "workflows", "go", "renovate"}
+var Names = []string{
+	"app", "schemas", "markdown", "links", "deps", "charts", "workflows", "go", "renovate",
+	"container", "supplychain", "codeql",
+}
 
 // npmDeps is shared by every npm-driven job: oxlint, ajv, markdownlint-cli2 and vitest all
 // come from here.
@@ -63,6 +66,22 @@ var patterns = map[string]*regexp.Regexp{
 	// renovate.json is in no other bucket - nothing else in CI reads it - so without this the
 	// only feedback on a typo there is Renovate opening a Config Warning issue after the merge.
 	"renovate": regexp.MustCompile(`^renovate\.json$`),
+	// Both images build the app inside themselves, so the app's own inputs belong here as well
+	// as the container files. .devcontainer/** is included because ci is the only thing that
+	// ever lints that Dockerfile - no job builds it.
+	"container": regexp.MustCompile(`^(Containerfile|container/|\.containerignore$|\.trivyignore\.yaml$|osv-scanner\.toml$|\.devcontainer/|src/|public/|index\.html$|vite\.config\.ts$|tsconfig.*\.json$)|` + npmDeps),
+	// CodeQL analyses JavaScript/TypeScript only, so this is the app's sources and the config
+	// that decides how they compile.
+	"codeql": regexp.MustCompile(`^(src/|public/|index\.html$|vite\.config\.ts$|tsconfig.*\.json$)|` + npmDeps),
+}
+
+// excludePatterns define buckets by what does NOT trigger them: the bucket is true when any
+// changed path fails to match. "supplychain" is the only one, and it is written this way round
+// on purpose - an SBOM, an OSV pass and a Semgrep scan should run for anything that is not
+// demonstrably prose, and a positive list would silently stop covering each new kind of file
+// somebody adds. Getting this wrong means a scan does not run, so it fails towards running.
+var excludePatterns = map[string]*regexp.Regexp{
+	"supplychain": regexp.MustCompile(`^(docs/|LICENSE$)|\.md$`),
 }
 
 // Result is what a classification run produced: one value per bucket in Names, plus the reason
@@ -98,9 +117,24 @@ func Classify(changed []string) Result {
 
 	values := make(map[string]bool, len(Names))
 	for _, name := range Names {
+		if exclude, ok := excludePatterns[name]; ok {
+			values[name] = anyPathOutside(exclude, changed)
+			continue
+		}
 		values[name] = matchesAny(patterns[name], changed)
 	}
 	return Result{Values: values}
+}
+
+// anyPathOutside reports whether any changed path does NOT match the pattern - the exclusion
+// form described on excludePatterns.
+func anyPathOutside(pattern *regexp.Regexp, changed []string) bool {
+	for _, path := range changed {
+		if !pattern.MatchString(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchesAny(pattern *regexp.Regexp, changed []string) bool {

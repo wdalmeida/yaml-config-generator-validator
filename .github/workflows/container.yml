@@ -18,51 +18,10 @@ name: Container
 # Nothing here gates the app itself: the site ships via GitHub Pages (deploy.yml). These
 # jobs exist so the container path can't silently rot. See docs/container.md.
 
-# Skip files that cannot change either image. The exclusions are the set .containerignore
-# already keeps out of the build context - that file is the evidence this list is right.
-#
-# Three things are deliberately NOT excluded. `.devcontainer/**`: the hadolint job is the only
-# check that file has ever had, since no CI job builds that image. `.trivyignore.yaml` /
-# `osv-scanner.toml`: they are the dated acceptances the scan gates read. `tools/` + `go.mod` /
-# `go.sum`: the scan and sca jobs below run `go run ./tools/cmd/scan-gate`, so a change there
-# changes what those gates decide - even though nothing in tools/ can change either image.
-# Nothing in this workflow is a required status check. If that ever changes, these filters
-# must go with it: a workflow skipped by a path filter never creates its check runs, so a
-# required check would sit Pending forever and the PR could never merge. ci.yml gates its jobs
-# from the inside (a `changes` job plus `if:`) for exactly that reason.
-#
-# The two lists below are identical and must stay that way - GitHub Actions has no YAML
-# anchors, and actionlint will not notice them drifting. Change one, change the other.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
-      - 'charts/**'
-      - '.kube-linter.yaml'
-      - 'renovate.json'
-      - 'release-please-config.json'
-      - '.release-please-manifest.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.markdown-link-check*.json'
-      - '.oxlintrc.json'
-      - '.size-limit.json'
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
-      - 'charts/**'
-      - '.kube-linter.yaml'
-      - 'renovate.json'
-      - 'release-please-config.json'
-      - '.release-please-manifest.json'
-      - '.markdownlint-cli2.jsonc'
-      - '.markdown-link-check*.json'
-      - '.oxlintrc.json'
-      - '.size-limit.json'
   # The scan jobs below carry dated acceptances (.trivyignore.yaml / osv-scanner.toml). Those
   # expire on a date, but a date only means something if a run happens - and push/PR alone
   # could leave an expired acceptance undetected for weeks on a quiet branch. A weekly build
@@ -78,6 +37,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-buckets.yml # zizmor: ignore[self-repository]
+
   # Static lint of both Containerfiles (hadolint, GPL-3.0/FOSS): missing USER, unpinned
   # base tags, shell anti-patterns in RUN, non-numeric UIDs. One invocation over both
   # files rather than a matrix - hadolint takes several paths and puts each finding's own
@@ -88,6 +50,8 @@ jobs:
   # else in CI builds that image, so this lint is the only thing standing between it and
   # silent rot (`just hadolint` runs the same pair locally).
   hadolint:
+    needs: changes
+    if: needs.changes.outputs.container == 'true' # the Containerfiles, the nginx config or .devcontainer/Dockerfile
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -143,6 +107,8 @@ jobs:
   # headers container/nginx.conf sets. A regression in that config is a silently broken
   # deployment otherwise - nothing else in this repo exercises it.
   build:
+    needs: changes
+    if: needs.changes.outputs.container == 'true' # either image, or the app it serves
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -341,7 +307,8 @@ jobs:
   # the OSV pass below - same "two independent passes" reasoning as supply-chain.yml's
   # sca-sbom/sca-source split.
   scan:
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.container == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -493,7 +460,8 @@ jobs:
   # lines of "Neither CPE nor PURL found for package" noise the SBOM path emits for every
   # file component Syft catalogs.
   sca:
-    needs: build
+    needs: [changes, build]
+    if: needs.changes.outputs.container == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -694,3 +662,34 @@ jobs:
       - name: Drop registry credentials
         if: always()
         run: rm -f "$HOME/.docker/config.json"
+
+  # The required status check for this workflow, and the reason the jobs above can be skipped
+  # safely. It always runs, so it always reports a real result - unlike a workflow-level
+  # `paths:` filter, which creates no check runs at all and would leave a required check
+  # Pending forever.
+  #
+  # `skipped` is a pass: on a PR that touches no container input, every job above is skipped
+  # and this reports success. `publish` is skipped on every PR by its own condition, which is
+  # why it is listed here but never gates a pull request.
+  container-ok:
+    if: always()
+    needs: [changes, hadolint, build, scan, sca, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEEDS"
+          bad="$(printf '%s' "$NEEDS" | jq -r 'to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled")
+            | "\(.key) (\(.value.result))"')"
+          if [ -n "$bad" ]; then
+            echo "::error::container workflow failed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All jobs succeeded or were skipped."

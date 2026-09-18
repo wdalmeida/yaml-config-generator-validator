@@ -75,7 +75,8 @@ from a public reference table.)
 A second ruleset ("Require PR and passing checks on main") targets `refs/heads/main` with the
 `pull_request` rule (a PR is required to merge; `required_approving_review_count: 0` since this
 is a solo-maintained repo - approvals can be added later if collaborators join),
-`required_status_checks` (exactly one context, `ci-ok` - see below), `deletion`, and
+`required_status_checks` (four contexts - `ci-ok`, `container-ok`, `supply-chain-ok` and
+`codeql-ok`, see below), `deletion`, and
 `non_fast_forward` (blocks force-push) rules active. Same admin bypass as the tag ruleset -
 the repo owner can still push directly or merge without a green check if genuinely needed, but
 nobody/nothing else can.
@@ -99,10 +100,16 @@ buys two things:
   is now covered the moment it lands in `ci-ok`'s `needs:`, with no repo-settings change - and
   `npm run lint:ci-gate` (run by the `actionlint` job) fails the build if one is missing from it.
 
-The consequence worth knowing: **no other workflow's checks may be made required while it has a
-`paths-ignore:` filter.** `container.yml`, `codeql.yml` and `supply-chain.yml` all have one, so
-each would sit Pending on any PR it filtered out. Making them required means first giving them
-the same in-workflow gating `ci.yml` uses.
+`container.yml`, `supply-chain.yml` and `codeql.yml` each have the same arrangement and their
+own aggregate, which is how they became required: previously they carried a `paths-ignore:`
+filter and were enforced by nothing, so a PR could merge with a red image build. **The
+constraint that forced that conversion still holds for anything else**: a workflow's checks
+cannot be required while it has a `paths-ignore:` filter, because it would sit Pending on any
+PR the filter excluded. `deploy.yml` still has one and so is still not required - it is
+main-only, and `workflow_dispatch` is its unfiltered escape hatch.
+
+`npm run lint:ci-gate` checks all four gates, so a job added to any of those workflows and not
+wired into its aggregate fails the build rather than becoming silently unenforced.
 
 To update the contexts - note that `PUT` replaces the **whole** ruleset, so the rules array has
 to be rewritten in place rather than sent on its own, or the `pull_request`, `deletion` and
@@ -115,10 +122,11 @@ id=$(gh api repos/:owner/:repo/rulesets --jq \
 gh api "repos/:owner/:repo/rulesets/$id" --jq '{name, target, enforcement, bypass_actors,
   conditions, rules}' |
   jq '(.rules[] | select(.type == "required_status_checks")
-       | .parameters.required_status_checks) = [{context: "ci-ok"}]' |
+       | .parameters.required_status_checks) = [{context: "ci-ok"}, {context: "container-ok"},
+           {context: "supply-chain-ok"}, {context: "codeql-ok"}]' |
   gh api "repos/:owner/:repo/rulesets/$id" -X PUT --input -
 
-# Confirm: should print exactly one line, `ci-ok`.
+# Confirm: should print the four gate jobs and nothing else.
 gh api "repos/:owner/:repo/rulesets/$id" --jq '.rules[]
   | select(.type == "required_status_checks")
   | .parameters.required_status_checks[].context'

@@ -1,32 +1,9 @@
 name: Supply Chain
 
-# Deliberately the most conservative filter of the four: prose only. `.github/**` stays in
-# scope because the `sast` job's Semgrep p/security-audit ruleset is what enforces SHA-pinned
-# `uses:`, and container/** and charts/** stay because Semgrep has rules for both.
-#
-# The cron is not optional here. Everything this workflow reports is time-dependent - OSV and
-# Semgrep findings change with no commit at all - so without it, filtering would let the npm
-# SCA path go quiet on a repo whose lockfile simply hasn't moved. container.yml already had one
-# for the same reason; this closes the asymmetry.
-# Nothing in this workflow is a required status check. If that ever changes, these filters
-# must go with it: a workflow skipped by a path filter never creates its check runs, so a
-# required check would sit Pending forever and the PR could never merge. ci.yml gates its jobs
-# from the inside (a `changes` job plus `if:`) for exactly that reason.
-#
-# The two lists below are identical and must stay that way - GitHub Actions has no YAML
-# anchors, and actionlint will not notice them drifting. Change one, change the other.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
   schedule:
     - cron: '29 5 * * 1'
 
@@ -42,6 +19,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-buckets.yml # zizmor: ignore[self-repository]
+
   # Generates a CycloneDX SBOM covering both the npm dependency tree (including dev
   # dependencies - these are "the tools" too) and the GitHub Actions used by this repo's own
   # workflows. Excludes the Go standard library version embedded in TypeScript 7's native
@@ -50,6 +30,8 @@ jobs:
   # CVEs. Also excludes .github/workflows/*.yml files that ship *inside* node_modules
   # (other packages' own CI configs, not this repo's).
   sbom:
+    needs: changes
+    if: needs.changes.outputs.supplychain == 'true' # anything that is not prose
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -137,7 +119,8 @@ jobs:
   # a YAML anchor - zizmor's own docs mark its anchor analysis as beta/less reliable, not worth
   # trading away for three duplicated lines in a repo that leans on zizmor as a security gate.
   sca-sbom:
-    needs: sbom
+    needs: [changes, sbom]
+    if: needs.changes.outputs.supplychain == 'true' # anything that is not prose
     permissions:
       contents: read
       security-events: write
@@ -159,6 +142,8 @@ jobs:
       category: osv-scanner-sbom
 
   sca-source:
+    needs: changes
+    if: needs.changes.outputs.supplychain == 'true' # anything that is not prose
     permissions:
       contents: read
       security-events: write
@@ -184,8 +169,11 @@ jobs:
   # NOTE: if a third OSV-Scanner pass is ever added, add it to both needs: below and the if:
   # condition, or its failures won't be surfaced here.
   sca-result:
-    needs: [sca-sbom, sca-source]
-    if: always()
+    needs: [changes, sca-sbom, sca-source]
+    # Gated on the same bucket as the two passes it reads, so it never sees a `skipped`
+    # dependency - either all three run or all three skip. That matters because the step
+    # below treats anything other than `success` as a failure, skipped included.
+    if: always() && needs.changes.outputs.supplychain == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -196,6 +184,8 @@ jobs:
   # SAST: scans the actual source with Semgrep's OSS engine (LGPL-2.1) using only public,
   # login-free registry rulesets - no Semgrep account/token involved.
   sast:
+    needs: changes
+    if: needs.changes.outputs.supplychain == 'true' # anything that is not prose
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -231,3 +221,32 @@ jobs:
         with:
           sarif_file: semgrep-results.sarif
           category: semgrep
+
+  # The required status check for this workflow - always runs, always reports, so the jobs
+  # above can be skipped without a required check sitting Pending forever.
+  #
+  # Note this accepts `skipped` where sca-result deliberately does not: there, a skipped OSV
+  # pass means the scan genuinely did not happen and the result is unknown; here, a skipped
+  # job means the classifier established there was nothing to scan.
+  supply-chain-ok:
+    if: always()
+    needs: [changes, sbom, sca-sbom, sca-source, sca-result, sast]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEEDS"
+          bad="$(printf '%s' "$NEEDS" | jq -r 'to_entries[]
+            | select(.value.result == "failure" or .value.result == "cancelled")
+            | "\(.key) (\(.value.result))"')"
+          if [ -n "$bad" ]; then
+            echo "::error::supply-chain workflow failed:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "All jobs succeeded or were skipped."

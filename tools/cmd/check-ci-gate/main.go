@@ -1,49 +1,71 @@
-// Command check-ci-gate asserts that ci.yml's `ci-ok` job still lists every other job in the
-// file in its `needs:`.
+// Command check-ci-gate asserts that every workflow fronted by an aggregate gate job still
+// lists all of that file's other jobs in the gate's `needs:`.
 //
-//	go run ./tools/cmd/check-ci-gate [workflow.yml]
+//	go run ./tools/cmd/check-ci-gate [workflow.yml ...]
 //
-// ci-ok is the only required status check for `main`, so a job missing from its `needs:` is
-// enforced by nothing at all - which is exactly how the previous per-context ruleset silently
-// stopped covering `helm` and `plumber`. Exits 1 with a line per problem when that happens.
+// With no arguments it checks every entry in ciok.GateFor. Each of those gates is the single
+// required status check for its workflow, so a job missing from one is enforced by nothing at
+// all - which is exactly how the previous per-context ruleset silently stopped covering `helm`
+// and `plumber`. Exits 1 with a line per problem.
 package main
 
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/wdalmeida/yaml-config-generator-validator/tools/internal/ciok"
 )
 
-const defaultWorkflow = ".github/workflows/ci.yml"
-
 func main() {
-	path := defaultWorkflow
-	if len(os.Args) > 1 {
-		path = os.Args[1]
+	paths := os.Args[1:]
+	if len(paths) == 0 {
+		for path := range ciok.GateFor {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
 	}
 
+	failed := false
+	for _, path := range paths {
+		gate, ok := ciok.GateFor[path]
+		if !ok {
+			// An explicitly named file that is not in the map is checked against ci.yml's
+			// gate, which is what the single-argument form was for before this was a set.
+			gate = ciok.Gate
+		}
+		if !check(path, gate) {
+			failed = true
+		}
+	}
+	if failed {
+		os.Exit(1)
+	}
+}
+
+func check(path, gate string) bool {
 	source, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		return false
 	}
 
-	result, err := ciok.Check(source)
+	result, err := ciok.CheckGate(source, gate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
-		os.Exit(1)
+		return false
 	}
 
 	for _, id := range result.Missing {
-		fmt.Fprintf(os.Stderr, "error: job %q is missing from %s's needs:\n", id, ciok.Gate)
+		fmt.Fprintf(os.Stderr, "error: %s: job %q is missing from %s's needs:\n", path, id, gate)
 	}
 	for _, id := range result.Dangling {
-		fmt.Fprintf(os.Stderr, "error: %s needs %q, which is not a job\n", ciok.Gate, id)
+		fmt.Fprintf(os.Stderr, "error: %s: %s needs %q, which is not a job\n", path, gate, id)
 	}
 	if !result.OK() {
-		os.Exit(1)
+		return false
 	}
 
-	fmt.Printf("%s covers all %d jobs in %s\n", ciok.Gate, len(result.Jobs), path)
+	fmt.Printf("%-38s %s covers all %d jobs\n", path, gate, len(result.Jobs))
+	return true
 }
