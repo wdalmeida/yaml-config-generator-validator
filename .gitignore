@@ -34,3 +34,6 @@ gitleaks_*_checksums.txt
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code session state and agent worktrees
+.claude/
