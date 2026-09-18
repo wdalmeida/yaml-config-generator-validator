@@ -353,7 +353,7 @@ doctor *flags:
 
 # Everything ci.yml runs, each job reported pass/fail (see `just install` first)
 [group('ci')]
-ci: (_run "lint build size coverage schemas go markdown links audit actionlint gitleaks zizmor plumber helm")
+ci: (_run "lint build size coverage schemas go renovate-config markdown links audit actionlint gitleaks zizmor plumber helm")
 
 # ci.yml test job: oxlint (human-readable, then SARIF)
 [group('ci')]
@@ -386,6 +386,14 @@ coverage:
 [group('ci')]
 schemas:
     npm run lint:schemas
+
+# Pulls ~600 packages for one file, so CI bucket-gates it on renovate.json itself. Locally it
+# is part of `just ci` because npx caches the download after the first run.
+#
+# ci.yml renovate job: validate renovate.json with Renovate's own validator
+[group('ci')]
+renovate-config:
+    npm run lint:renovate
 
 # ci.yml go job: gofmt check, then build/vet/test the tools/ module
 [group('ci')]

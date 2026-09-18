@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "lint:schemas": "go run ./tools/cmd/validate-schemas",
+    "lint:renovate": "npx --yes --package renovate renovate-config-validator --strict renovate.json",
     "lint:ci-gate": "go run ./tools/cmd/check-ci-gate",
     "lint:md": "markdownlint-cli2 \"**/*.md\"",
     "lint:links": "go run ./tools/cmd/check-markdown-links",
