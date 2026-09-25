@@ -62,7 +62,7 @@ RUN tmp="$(mktemp -d)" \
  && rm -rf "$tmp"
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.6
+ARG UV_VERSION=0.12.17
 # hadolint ignore=DL3003
 RUN tmp="$(mktemp -d)" \
  && case "$(dpkg --print-architecture)" in \
@@ -130,7 +130,7 @@ RUN cd /tmp/ci-bootstrap \
 # verification still happens; the attestation check is what a later `just install-pinned
 # plumber` inside the running container (where you are logged in) adds on top.
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=2.98.0
+ARG GH_VERSION=2.101.0
 # hadolint ignore=DL3003
 RUN tmp="$(mktemp -d)" \
  && arch="$(dpkg --print-architecture)" \
