@@ -67,7 +67,7 @@ jobs:
           name: oxlint-results
           path: oxlint-results.sarif
           retention-days: 90
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -298,7 +298,7 @@ jobs:
           path: kube-linter-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -354,7 +354,7 @@ jobs:
           name: markdownlint-results
           path: markdownlint-results.sarif
           retention-days: 90
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true
         with:
@@ -495,7 +495,7 @@ jobs:
           path: gitleaks-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true
         with:
@@ -554,7 +554,7 @@ jobs:
           path: zizmor-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -585,7 +585,7 @@ jobs:
       # until it's closed. Self-contained: verifies its own binary against checksums.txt + a
       # Sigstore/SLSA attestation before running, and handles its own SARIF/artifact upload
       # internally.
-      - uses: getplumber/plumber@7cc2c2fe18af5a9f55e28528b8fba0fecee3be79 # v0.4.56
+      - uses: getplumber/plumber@d6a09a888677f2fc9580144635bc5dab62c58173 # v0.5.3
 
   # The single required status check for `main`, and the reason every job above can be skipped
   # safely. It always runs, so it always reports a real success or failure - nothing here relies

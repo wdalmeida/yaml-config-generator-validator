@@ -90,7 +90,7 @@ jobs:
           path: hadolint-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -405,7 +405,7 @@ jobs:
           path: trivy-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -552,7 +552,7 @@ jobs:
           path: osv-results-container.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always() && steps.osv.outputs.scanned == 'true'
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
