@@ -44,7 +44,7 @@
     "jsdom": "^30.0.1",
     "markdown-link-check": "^3.15.0",
     "markdownlint-cli2": "^0.23.2",
-    "markdownlint-cli2-formatter-sarif": "^0.0.4",
+    "markdownlint-cli2-formatter-sarif": "^0.0.5",
     "oxlint": "^1.75.0",
     "size-limit": "^13.0.3",
     "typescript": "~7.0.2",
