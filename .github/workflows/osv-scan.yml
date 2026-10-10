@@ -51,7 +51,7 @@ jobs:
       # Same install pattern as gitleaks/Syft/Trivy: exact version, checksum-verified.
       - name: Install OSV-Scanner (checksum-verified)
         env:
-          OSV_SCANNER_VERSION: 2.5.1
+          OSV_SCANNER_VERSION: 2.6.0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"

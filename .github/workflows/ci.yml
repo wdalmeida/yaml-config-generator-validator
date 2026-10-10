@@ -188,7 +188,7 @@ jobs:
       # being piped through `sha256sum -c`.
       - name: Install helm-unittest (checksum-verified)
         env:
-          HELM_UNITTEST_VERSION: 1.1.2
+          HELM_UNITTEST_VERSION: 1.2.1
         run: |
           set -euo pipefail
           # helm-unittest is a Helm plugin, not a binary on PATH, so it goes in HELM_PLUGINS
