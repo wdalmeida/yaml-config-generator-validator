@@ -270,7 +270,7 @@ jobs:
 
       - name: Install Syft (checksum-verified, no anchore/sbom-action)
         env:
-          SYFT_VERSION: 1.51.1
+          SYFT_VERSION: 1.54.0
         run: |
           set -euo pipefail
           asset="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
@@ -375,7 +375,7 @@ jobs:
 
       - name: Install Trivy (checksum-verified)
         env:
-          TRIVY_VERSION: 0.74.0
+          TRIVY_VERSION: 0.75.0
         run: |
           set -euo pipefail
           asset="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
@@ -504,7 +504,7 @@ jobs:
       # this workflow's pattern for every other tool anyway.
       - name: Install OSV-Scanner (checksum-verified)
         env:
-          OSV_SCANNER_VERSION: 2.5.1
+          OSV_SCANNER_VERSION: 2.6.0
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
