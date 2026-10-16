@@ -83,14 +83,14 @@ jobs:
         run: hadolint --format sarif Containerfile Containerfile.redhat .devcontainer/Dockerfile > hadolint-results.sarif
         continue-on-error: true
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: hadolint-results
           path: hadolint-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -260,7 +260,7 @@ jobs:
           podman save --format oci-archive -o image.tar "$IMAGE_REF"
           podman save --format docker-archive -o image-docker.tar "$IMAGE_REF"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: container-image${{ matrix.suffix }}
           path: |
@@ -293,7 +293,7 @@ jobs:
           SYFT_CHECK_FOR_APP_UPDATE: "false"
         run: syft scan oci-archive:image.tar -o cyclonedx-json > sbom.cdx.json
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The alpine leg keeps the bare name supply-chain.yml's SBOM artifact also uses
           # (artifacts are scoped to a workflow run, so the two never collide); only the
@@ -346,10 +346,10 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: container-image${{ matrix.suffix }}
 
@@ -398,14 +398,14 @@ jobs:
             --ignorefile .trivyignore.yaml \
             --format sarif --output trivy-results.sarif
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: trivy-results${{ matrix.suffix }}
           path: trivy-results.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         if: always()
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -492,10 +492,10 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: container-image${{ matrix.suffix }}
 
@@ -545,14 +545,14 @@ jobs:
             echo "::warning title=OSV-Scanner found no package sources::${msg} against OSV.dev. See docs/container.md."
           fi
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.osv.outputs.scanned == 'true'
         with:
           name: osv-scan-results-container${{ matrix.suffix }}
           path: osv-results-container.sarif
           retention-days: 90
 
-      - uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         if: always() && steps.osv.outputs.scanned == 'true'
         continue-on-error: true # code scanning requires GHAS on private repos - don't fail CI over it
         with:
@@ -606,11 +606,11 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: container-image
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sbom.cdx.json
 
