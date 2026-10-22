@@ -43,7 +43,7 @@ RUN apt-get update \
 # checksum file, the same way every workflow (and `just install-pinned`) installs a binary.
 
 # renovate: datasource=github-releases depName=casey/just
-ARG JUST_VERSION=1.58.0
+ARG JUST_VERSION=1.59.0
 # The cd below is inside a subshell, so `sha256sum -c` can resolve the filename its checksum
 # line names; WORKDIR is not an equivalent (same for the uv and gh installs).
 # hadolint ignore=DL3003
@@ -62,7 +62,7 @@ RUN tmp="$(mktemp -d)" \
  && rm -rf "$tmp"
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-ARG UV_VERSION=0.12.6
+ARG UV_VERSION=0.13.1
 # hadolint ignore=DL3003
 RUN tmp="$(mktemp -d)" \
  && case "$(dpkg --print-architecture)" in \
@@ -130,7 +130,7 @@ RUN cd /tmp/ci-bootstrap \
 # verification still happens; the attestation check is what a later `just install-pinned
 # plumber` inside the running container (where you are logged in) adds on top.
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=2.98.0
+ARG GH_VERSION=2.102.0
 # hadolint ignore=DL3003
 RUN tmp="$(mktemp -d)" \
  && arch="$(dpkg --print-architecture)" \
