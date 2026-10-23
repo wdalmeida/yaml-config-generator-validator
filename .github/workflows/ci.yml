@@ -87,7 +87,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
       - run: go run ./tools/cmd/validate-schemas
 
@@ -112,7 +112,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
 
       # gofmt is not a style preference here, it is the diff hygiene that keeps a Renovate bump
@@ -157,7 +157,7 @@ jobs:
 
       - name: Install Helm and kubeconform (checksum-verified)
         env:
-          HELM_VERSION: 4.3.0
+          HELM_VERSION: 4.3.1
           KUBECONFORM_VERSION: 0.8.0
         run: |
           set -euo pipefail
@@ -188,7 +188,7 @@ jobs:
       # being piped through `sha256sum -c`.
       - name: Install helm-unittest (checksum-verified)
         env:
-          HELM_UNITTEST_VERSION: 1.1.2
+          HELM_UNITTEST_VERSION: 1.2.1
         run: |
           set -euo pipefail
           # helm-unittest is a Helm plugin, not a binary on PATH, so it goes in HELM_PLUGINS
@@ -385,7 +385,7 @@ jobs:
           cache: npm
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
       # markdown-link-check still resolves every link; the Go command is the loop around it and
       # the exit-code aggregation `find -exec` could not do.
@@ -447,7 +447,7 @@ jobs:
       # in its own job because it is a workflow-YAML lint by any other name.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.2'
           cache-dependency-path: go.sum
       - run: go run ./tools/cmd/check-ci-gate
         # No native SARIF output from actionlint itself (only a Go-template `-format`); findings
@@ -528,7 +528,7 @@ jobs:
       # template injection via untrusted context values, overly broad workflow permissions,
       # impostor commits, credential persistence through checkout. Installed from PyPI
       # (registry-integrity-checked, exact version pinned) rather than a raw binary download.
-      - run: pip install zizmor==1.30.1
+      - run: pip install zizmor==1.31.1
 
       # Two runs, because zizmor's SARIF mode exits 0 even when it has findings. This job
       # used to have only the SARIF run, gated on its `outcome` - a gate that could never
