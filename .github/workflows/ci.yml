@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run lint
@@ -339,7 +339,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       # lint:md always writes markdownlint-results.sarif too (see .markdownlint-cli2.jsonc's
@@ -381,7 +381,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -410,7 +410,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
       - run: npm run lint:renovate
 
   audit:
@@ -424,7 +424,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 26
       # No `npm ci`: `npm audit` resolves the tree from the lockfile, so installing it first
       # bought nothing but a minute. --package-lock-only says that out loud rather than relying
       # on how npm happens to behave with no node_modules present.
